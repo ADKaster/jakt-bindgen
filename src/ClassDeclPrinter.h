@@ -26,6 +26,10 @@ private:
     void printClass(clang::CXXRecordDecl const* class_definition);
     void printNamespace(clang::NamespaceDecl const* NS);
 
+
+    void printClassDeclaration(clang::CXXRecordDecl const* class_definition);
+    void printClassMethods(clang::CXXRecordDecl const* class_definition);
+
     std::vector<clang::CXXRecordDecl const*> Imports;
 };
 

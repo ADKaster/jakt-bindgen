@@ -21,6 +21,40 @@ namespace jakt_bindgen {
 
 using namespace clang::ast_matchers;
 
+ClassDeclPrinter::ClassDeclPrinter(std::string Namespace, std::string Header)
+    : Namespace(std::move(Namespace))
+    , Header(std::move(Header))
+{
+}
+
+ClassDeclPrinter::~ClassDeclPrinter()
+{
+    llvm::outs() << "} // namespace\n";
+    llvm::outs() << "} // import\n";
+
+    for (auto const* klass : Imports) {
+        llvm::outs() << "import " <<  llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getQualifiedNameAsString();
+        llvm::outs() << " { " << klass->getNameAsString() << " }\n";
+    }
+}
+
+void ClassDeclPrinter::registerMatchers(clang::ast_matchers::MatchFinder *Finder)
+{
+    Finder->addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
+        recordDecl(decl().bind("record"),
+            hasParent(namespaceDecl(hasName(Namespace))),
+            isExpansionInFileMatching(Header)))
+        .bind("names"), this);
+}
+
+void ClassDeclPrinter::run(MatchFinder::MatchResult const& Result) {
+    if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("names")) {
+        printNamespace(llvm::cast<clang::NamespaceDecl>(RD->getEnclosingNamespaceContext()));
+        if (RD->isClass())
+            printClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()));
+    }
+}
+
 void ClassDeclPrinter::printNamespace(clang::NamespaceDecl const* NS)
 {
     llvm::outs() << "import extern \"" << (std::filesystem::path(Namespace) / Header).string() << "\" {\n";
@@ -28,6 +62,15 @@ void ClassDeclPrinter::printNamespace(clang::NamespaceDecl const* NS)
 }
 
 void ClassDeclPrinter::printClass(clang::CXXRecordDecl const* class_definition)
+{
+    // class <name> : <base(s)>
+    printClassDeclaration(class_definition);
+    llvm::outs() << " {\n";
+    printClassMethods(class_definition);
+    llvm::outs() << "}\n";
+}
+
+void ClassDeclPrinter::printClassDeclaration(clang::CXXRecordDecl const* class_definition)
 {
     llvm::outs() << "class " << class_definition->getName() << " ";
     bool first_base = true;
@@ -53,41 +96,22 @@ void ClassDeclPrinter::printClass(clang::CXXRecordDecl const* class_definition)
         // FIXME: Only do this if base_record and class_defintion are not from the same header
         Imports.push_back(base_record);
     }
-    llvm::outs() << " {\n";
-    llvm::outs() << "}\n";
 }
 
-ClassDeclPrinter::ClassDeclPrinter(std::string Namespace, std::string Header)
-    : Namespace(std::move(Namespace))
-    , Header(std::move(Header))
+void ClassDeclPrinter::printClassMethods(clang::CXXRecordDecl const* class_definition)
 {
-}
-
-ClassDeclPrinter::~ClassDeclPrinter()
-{
-    llvm::outs() << "} // namespace\n";
-    llvm::outs() << "} // import\n";
-
-    for (auto const* klass : Imports) {
-        llvm::outs() << "import " <<  llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getNameAsString();
-        llvm::outs() << " { " << klass->getNameAsString() << " }\n";
-    }
-}
-
-void ClassDeclPrinter::registerMatchers(clang::ast_matchers::MatchFinder *Finder)
-{
-    Finder->addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
-        recordDecl(decl().bind("record"),
-            hasParent(namespaceDecl(hasName(Namespace))),
-            isExpansionInFileMatching(Header)))
-        .bind("names"), this);
-}
-
-void ClassDeclPrinter::run(MatchFinder::MatchResult const& Result) {
-    if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("names")) {
-        printNamespace(llvm::cast<clang::NamespaceDecl>(RD->getEnclosingNamespaceContext()));
-        if (RD->isClass())
-            printClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()));
+    for (clang::CXXMethodDecl const* method : class_definition->methods()) {
+        if (method->isInstance()) {
+            if (method->getAccess() == clang::AccessSpecifier::AS_private)
+                continue;
+            std::string access = (method->getAccess() == clang::AS_public) ? std::string("public") : (method->getAccess() == clang::AS_protected) ? std::string("protected") : "unknown??";
+            llvm::outs() << "\t" << access << " Instance method: " << method->getNameAsString() << "\n";
+        } else if (method->isStatic()) {
+            llvm::outs() << "\tStatic method: " << method->getNameAsString() << "\n";
+        }
+        else {
+            llvm::outs() << "vas ist das? " << method->getNameAsString() << "\n";
+        }
     }
 }
 
