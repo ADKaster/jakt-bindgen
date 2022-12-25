@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <clang/AST/DeclCXX.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <memory>
+#include <vector>
 
 namespace jakt_bindgen {
 
@@ -20,6 +22,11 @@ public:
 private:
     std::string Namespace;
     std::string Header;
+
+    void printClass(clang::CXXRecordDecl const* class_definition);
+    void printNamespace(clang::NamespaceDecl const* NS);
+
+    std::vector<clang::CXXRecordDecl const*> Imports;
 };
 
 }

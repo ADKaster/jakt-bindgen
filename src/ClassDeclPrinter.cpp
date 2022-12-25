@@ -8,23 +8,26 @@
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/Type.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
-#include <clang/ASTMatchers/ASTMatchersInternal.h>
 #include <clang/Basic/Specifiers.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <sstream>
+#include <vector>
+#include <filesystem>
 
 namespace jakt_bindgen {
 
 using namespace clang::ast_matchers;
 
-static void printNamespace(std::string_view header_name, clang::NamespaceDecl const* NS)
+void ClassDeclPrinter::printNamespace(clang::NamespaceDecl const* NS)
 {
-    llvm::outs() << "import extern \"" << header_name  << "\" {\n";
+    llvm::outs() << "import extern \"" << (std::filesystem::path(Namespace) / Header).string() << "\" {\n";
     llvm::outs() << "namespace " << NS->getQualifiedNameAsString() << " {\n";
 }
 
-static void printClass(clang::CXXRecordDecl const* class_definition)
+void ClassDeclPrinter::printClass(clang::CXXRecordDecl const* class_definition)
 {
     llvm::outs() << "class " << class_definition->getName() << " ";
     bool first_base = true;
@@ -34,13 +37,21 @@ static void printClass(clang::CXXRecordDecl const* class_definition)
         if (!(base.getAccessSpecifier() == clang::AccessSpecifier::AS_public))
             llvm::report_fatal_error("ERROR: Don't know how to handle non-public bases\n", false);
 
-        if (first_base)
+        if (first_base) {
             llvm::outs() << ": ";
+            first_base = false;
+        }
         else
             llvm::outs() << ", ";
 
-        // FIXME: Find this type in the AST, and import it at the top of the file
-        llvm::outs() << base.getTypeSourceInfo()->getType().getAsString();
+        clang::RecordType const* Ty = base.getType()->getAs<clang::RecordType>();
+        clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
+        if (!base_record)
+            llvm::report_fatal_error("ERROR: Base class unusable", false);
+        llvm::outs() << base_record->getNameAsString();
+
+        // FIXME: Only do this if base_record and class_defintion are not from the same header
+        Imports.push_back(base_record);
     }
     llvm::outs() << " {\n";
     llvm::outs() << "}\n";
@@ -56,6 +67,11 @@ ClassDeclPrinter::~ClassDeclPrinter()
 {
     llvm::outs() << "} // namespace\n";
     llvm::outs() << "} // import\n";
+
+    for (auto const* klass : Imports) {
+        llvm::outs() << "import " <<  llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getNameAsString();
+        llvm::outs() << " { " << klass->getNameAsString() << " }\n";
+    }
 }
 
 void ClassDeclPrinter::registerMatchers(clang::ast_matchers::MatchFinder *Finder)
@@ -69,9 +85,7 @@ void ClassDeclPrinter::registerMatchers(clang::ast_matchers::MatchFinder *Finder
 
 void ClassDeclPrinter::run(MatchFinder::MatchResult const& Result) {
     if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("names")) {
-        std::stringstream ss;
-        ss << Namespace << "/" << Header;
-        printNamespace(ss.view(), llvm::cast<clang::NamespaceDecl>(RD->getEnclosingNamespaceContext()));
+        printNamespace(llvm::cast<clang::NamespaceDecl>(RD->getEnclosingNamespaceContext()));
         if (RD->isClass())
             printClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()));
     }
