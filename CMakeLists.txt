@@ -14,7 +14,8 @@ find_package(LLVM CONFIG REQUIRED)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_executable(jakt-bindgen
-  main.cpp
+  src/main.cpp
+  src/ClassDeclPrinter.cpp
 )
 
 target_include_directories(jakt-bindgen SYSTEM PRIVATE ${CLANG_INCLUDE_DIRS} ${LLVM_INCLUDE_DIRS})
