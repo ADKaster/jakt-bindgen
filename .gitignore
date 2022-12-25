@@ -1,0 +1,5 @@
+build
+Build
+*.o
+jakt-bindgen
+
