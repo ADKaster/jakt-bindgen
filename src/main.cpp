@@ -37,7 +37,6 @@ int main(int argc, const char **argv) {
 
   jakt_bindgen::ClassDeclPrinter Printer("GUI", "Widget.h");
   clang::ast_matchers::MatchFinder Finder;
-  Finder.addMatcher(Printer.GetMatcher(), &Printer);
-            
+  Printer.registerMatchers(&Finder);
   return Tool.run(clang::tooling::newFrontendActionFactory(&Finder).get());
 }
