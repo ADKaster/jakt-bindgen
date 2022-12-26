@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include "CXXClassListener.h"
-#include "JaktGenerator.h"
+#include "SourceFileHandler.h"
 
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
-#include <system_error>
+
+#include <filesystem>
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
@@ -28,6 +27,9 @@ static llvm::cl::extrahelp CommonHelp(clang::tooling::CommonOptionsParser::HelpM
 static llvm::cl::extrahelp MoreHelp("\nMore help text...\n");
 
 int main(int argc, const char **argv) {
+
+  auto destination_path = std::filesystem::current_path();
+
   auto ExpectedParser = clang::tooling::CommonOptionsParser::create(argc, argv, MyToolCategory);
   if (!ExpectedParser) {
     // Fail gracefully for unsupported options.
@@ -38,18 +40,9 @@ int main(int argc, const char **argv) {
   clang::tooling::ClangTool Tool(OptionsParser.getCompilations(),
                  OptionsParser.getSourcePathList());
 
-  clang::ast_matchers::MatchFinder Finder;
-  jakt_bindgen::CXXClassListener Listener("GUI", Finder);
+  jakt_bindgen::SourceFileHandler handler("GUI", destination_path);
 
-  std::error_code ec = {};
-  llvm::raw_fd_ostream OutFile("widget.jakt", ec);
-  if (ec) {
-    return 3;
-  }
-
-  jakt_bindgen::JaktGenerator generator(OutFile, Listener);
-
-  auto action = clang::tooling::newFrontendActionFactory(&Finder, &generator);
+  auto action = clang::tooling::newFrontendActionFactory(&handler.finder(), &handler);
 
   return Tool.run(action.get());
 }

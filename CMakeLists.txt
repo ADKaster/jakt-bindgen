@@ -20,6 +20,7 @@ add_executable(jakt-bindgen
   src/main.cpp
   src/CXXClassListener.cpp
   src/JaktGenerator.cpp
+  src/SourceFileHandler.cpp
 )
 
 target_include_directories(jakt-bindgen SYSTEM PRIVATE ${CLANG_INCLUDE_DIRS} ${LLVM_INCLUDE_DIRS})

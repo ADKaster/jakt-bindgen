@@ -4,39 +4,20 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#define DEBUG_TYPE "jakt-gen"
+
 #include "JaktGenerator.h"
+#include "CXXClassListener.h"
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
-#include <clang/Frontend/CompilerInstance.h>
+#include <llvm/Support/Debug.h>
 
 namespace jakt_bindgen {
 
-JaktGenerator::JaktGenerator(llvm::raw_ostream& Out, CXXClassListener& class_information)
+JaktGenerator::JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information)
     : Out(Out)
     , class_information(class_information)
 {
-}
-
-bool JaktGenerator::handleBeginSource(clang::CompilerInstance& CI)
-{
-    if (!clang::tooling::SourceFileCallbacks::handleBeginSource(CI))
-        return false;
-
-    auto main_file_id = CI.getSourceManager().getMainFileID();
-    auto maybe_path = CI.getSourceManager().getNonBuiltinFilenameForID(main_file_id);
-    if (!maybe_path.has_value())
-        return false;
-    
-    std::filesystem::path main_file_path(maybe_path.value().str());
-    class_information.resetForNextFile(main_file_path.filename());
-
-    return true;
-}
-
-void JaktGenerator::handleEndSource()
-{
-    generate();
-    clang::tooling::SourceFileCallbacks::handleEndSource();
 }
 
 void JaktGenerator::generate()
@@ -126,15 +107,14 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
             if (method->getAccess() == clang::AccessSpecifier::AS_private)
                 continue;
             std::string access = (method->getAccess() == clang::AS_public) ? std::string("public") : (method->getAccess() == clang::AS_protected) ? std::string("protected") : "unknown??";
-            llvm::outs() << "\t" << access << " Instance method: " << method->getNameAsString() << "\n";
+            LLVM_DEBUG(llvm::dbgs() << "\t" << access << " Instance method: " << method->getNameAsString() << "\n");
         } else if (method->isStatic()) {
-            llvm::outs() << "\tStatic method: " << method->getNameAsString() << "\n";
+            LLVM_DEBUG(llvm::dbgs() << "\tStatic method: " << method->getNameAsString() << "\n");
         }
         else {
-            llvm::outs() << "vas ist das? " << method->getNameAsString() << "\n";
+            LLVM_DEBUG(llvm::dbgs() << "vas ist das? " << method->getNameAsString() << "\n");
         }
     }
 }
-
 
 }

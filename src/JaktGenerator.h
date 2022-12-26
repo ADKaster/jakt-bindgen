@@ -6,25 +6,22 @@
 
 #pragma once
 
-#include "CXXClassListener.h"
-#include <clang/Frontend/PrecompiledPreamble.h>
+#include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
 #include <llvm/Support/raw_ostream.h>
-#include <filesystem>
 
 namespace jakt_bindgen {
+
+class CXXClassListener;
 
 class JaktGenerator : public clang::tooling::SourceFileCallbacks
 {
 public:
-    JaktGenerator(llvm::raw_ostream& Out, CXXClassListener& class_information);
+    JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information);
 
-    // FIXME: put the source file callbacks in another class that owns the listener and the generator
-    virtual bool handleBeginSource(clang::CompilerInstance&) override;
-    virtual void handleEndSource() override;
+    void generate();
 
 private:
-    void generate();
 
     void printImportStatements();
 
@@ -39,7 +36,7 @@ private:
     void printClassMethods(clang::CXXRecordDecl const* class_definition);
 
     llvm::raw_ostream& Out;
-    CXXClassListener& class_information;
+    CXXClassListener const& class_information;
 };
 
 }
