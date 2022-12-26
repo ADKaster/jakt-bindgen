@@ -24,9 +24,7 @@ public:
     std::vector<clang::CXXRecordDecl const*> const& records() const { return Records; }
     std::vector<clang::CXXRecordDecl const*> const& imports() const { return Imports; }
 
-    std::string importPath() const;
-
-    void resetForNextFile(std::string FileName);
+    void resetForNextFile();
 
 private:
 
@@ -36,7 +34,6 @@ private:
     void registerMatches();
 
     std::string Namespace;
-    std::string Header;
 
     std::vector<clang::CXXRecordDecl const*> Records;
     std::vector<clang::CXXRecordDecl const*> Imports;

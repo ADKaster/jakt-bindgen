@@ -19,7 +19,7 @@ class JaktGenerator : public clang::tooling::SourceFileCallbacks
 public:
     JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information);
 
-    void generate();
+    void generate(std::string const& header_path);
 
 private:
 

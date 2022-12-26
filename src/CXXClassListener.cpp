@@ -26,6 +26,7 @@ CXXClassListener::CXXClassListener(std::string Namespace, clang::ast_matchers::M
     : Namespace(std::move(Namespace))
     , Finder(Finder)
 {
+    registerMatches();
 }
 
 CXXClassListener::~CXXClassListener()
@@ -37,7 +38,7 @@ void CXXClassListener::registerMatches()
     Finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
         recordDecl(decl().bind("record"),
             hasParent(namespaceDecl(hasName(Namespace))),
-            isExpansionInFileMatching(Header)))
+            isExpansionInMainFile()))
         .bind("names"), this);
 }
 
@@ -48,19 +49,10 @@ void CXXClassListener::run(MatchFinder::MatchResult const& Result) {
     }
 }
 
-void CXXClassListener::resetForNextFile(std::string FileName)
+void CXXClassListener::resetForNextFile()
 {
-    // Note: We assume all classes will be in Namespace
-    Header = std::move(FileName);
     Records.clear();
     Imports.clear();
-
-    registerMatches();
-}
-
-std::string CXXClassListener::importPath() const
-{
-    return (std::filesystem::path(Namespace) / Header).string();
 }
 
 void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition)

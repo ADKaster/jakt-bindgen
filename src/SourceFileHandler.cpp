@@ -6,6 +6,7 @@
 
 #include "SourceFileHandler.h"
 #include "JaktGenerator.h"
+#include <filesystem>
 #include <llvm/Support/raw_ostream.h>
 #include <algorithm>
 #include <system_error>
@@ -13,9 +14,10 @@
 namespace jakt_bindgen {
 
 
-SourceFileHandler::SourceFileHandler(std::string Namespace, std::filesystem::path out_dir)
+SourceFileHandler::SourceFileHandler(std::string Namespace, std::filesystem::path out_dir, std::filesystem::path base_dir)
     : listener(std::move(Namespace), Finder)
-    , out_dir(out_dir)
+    , out_dir(std::move(out_dir))
+    , base_dir(std::move(base_dir))
 {
 }
 
@@ -29,8 +31,10 @@ bool SourceFileHandler::handleBeginSource(clang::CompilerInstance& CI)
     if (!maybe_path.has_value())
         return false;
 
-    current_filepath = maybe_path.value().str();
-    listener.resetForNextFile(current_filepath.filename());
+    current_filepath = std::filesystem::canonical(maybe_path.value().str()).lexically_relative(base_dir);
+    llvm::outs() << "Processing " << current_filepath << "\n";
+
+    listener.resetForNextFile();
 
     return true;
 }
@@ -50,7 +54,7 @@ void SourceFileHandler::handleEndSource()
 
     JaktGenerator generator(os, listener);
 
-    generator.generate();
+    generator.generate(current_filepath);
 }
 
 }

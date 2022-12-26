@@ -17,7 +17,7 @@ namespace jakt_bindgen {
 class SourceFileHandler : public clang::tooling::SourceFileCallbacks
 {
 public:
-    SourceFileHandler(std::string Namespace, std::filesystem::path out_dir);
+    SourceFileHandler(std::string Namespace, std::filesystem::path out_dir, std::filesystem::path base_dir);
 
     virtual bool handleBeginSource(clang::CompilerInstance&) override;
     virtual void handleEndSource() override;
@@ -27,6 +27,7 @@ public:
 private:
     std::filesystem::path current_filepath;
     std::filesystem::path out_dir;
+    std::filesystem::path base_dir;
 
     clang::ast_matchers::MatchFinder Finder;
     CXXClassListener listener;

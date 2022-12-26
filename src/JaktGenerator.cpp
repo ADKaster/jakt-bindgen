@@ -20,11 +20,11 @@ JaktGenerator::JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& cla
 {
 }
 
-void JaktGenerator::generate()
+void JaktGenerator::generate(std::string const& header_path)
 {
     printImportStatements();
 
-    printImportExternBegin(class_information.importPath());
+    printImportExternBegin(header_path);
 
     for (clang::CXXRecordDecl const* klass : class_information.records())
         printClass(klass);

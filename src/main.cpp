@@ -10,6 +10,7 @@
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
+#include <llvm-15/llvm/Support/CommandLine.h>
 #include <llvm/Support/CommandLine.h>
 
 #include <filesystem>
@@ -26,6 +27,14 @@ static llvm::cl::extrahelp CommonHelp(clang::tooling::CommonOptionsParser::HelpM
 // A help message for this specific tool can be added afterwards.
 static llvm::cl::extrahelp MoreHelp("\nMore help text...\n");
 
+static llvm::cl::opt<std::string> TargetNamespace("n", llvm::cl::desc("Specify namespace to import names from"),
+                                                  llvm::cl::value_desc("namespace"),
+                                                  llvm::cl::Required);
+
+static llvm::cl::opt<std::string> BasePath("b", llvm::cl::desc("Specify base path to use to determine import paths"),
+                                                llvm::cl::value_desc("base"),
+                                                llvm::cl::Required);
+
 int main(int argc, const char **argv) {
 
   auto destination_path = std::filesystem::current_path();
@@ -40,7 +49,7 @@ int main(int argc, const char **argv) {
   clang::tooling::ClangTool Tool(OptionsParser.getCompilations(),
                  OptionsParser.getSourcePathList());
 
-  jakt_bindgen::SourceFileHandler handler("GUI", destination_path);
+  jakt_bindgen::SourceFileHandler handler(TargetNamespace, destination_path, std::filesystem::canonical(BasePath.c_str()));
 
   auto action = clang::tooling::newFrontendActionFactory(&handler.finder(), &handler);
 
