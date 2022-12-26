@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include "ClassDeclPrinter.h"
+#include "CXXClassListener.h"
+#include "JaktGenerator.h"
 
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/CommandLine.h>
+#include <system_error>
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
@@ -35,8 +38,18 @@ int main(int argc, const char **argv) {
   clang::tooling::ClangTool Tool(OptionsParser.getCompilations(),
                  OptionsParser.getSourcePathList());
 
-  jakt_bindgen::ClassDeclPrinter Printer("GUI", "Widget.h");
   clang::ast_matchers::MatchFinder Finder;
-  Printer.registerMatchers(&Finder);
-  return Tool.run(clang::tooling::newFrontendActionFactory(&Finder).get());
+  jakt_bindgen::CXXClassListener Listener("GUI", Finder);
+
+  std::error_code ec = {};
+  llvm::raw_fd_ostream OutFile("widget.jakt", ec);
+  if (ec) {
+    return 3;
+  }
+
+  jakt_bindgen::JaktGenerator generator(OutFile, Listener);
+
+  auto action = clang::tooling::newFrontendActionFactory(&Finder, &generator);
+
+  return Tool.run(action.get());
 }

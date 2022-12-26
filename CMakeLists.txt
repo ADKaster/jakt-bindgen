@@ -13,9 +13,13 @@ find_package(LLVM CONFIG REQUIRED)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_UNDEFINED_SANITIZER "Check for UB" OFF)
+option(ENABLE_ADDRESS_SANITIZER "Check for memory errors" OFF)
+
 add_executable(jakt-bindgen
   src/main.cpp
-  src/ClassDeclPrinter.cpp
+  src/CXXClassListener.cpp
+  src/JaktGenerator.cpp
 )
 
 target_include_directories(jakt-bindgen SYSTEM PRIVATE ${CLANG_INCLUDE_DIRS} ${LLVM_INCLUDE_DIRS})
@@ -34,3 +38,13 @@ target_link_libraries(jakt-bindgen PRIVATE
   clangToolingCore
   clangTooling
 )
+
+if (ENABLE_UNDEFINED_SANITIZER)
+  target_compile_options(jakt-bindgen PUBLIC -fsanitize=undefined)
+  target_link_options(jakt-bindgen PUBLIC -fsanitize=undefined)
+endif()
+
+if (ENABLE_ADDRESS_SANITIZER)
+  target_compile_options(jakt-bindgen PUBLIC -fsanitize=address)
+  target_link_options(jakt-bindgen PUBLIC -fsanitize=address)
+endif()
