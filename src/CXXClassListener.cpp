@@ -38,15 +38,18 @@ void CXXClassListener::registerMatches()
     Finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
         recordDecl(decl().bind("toplevel-name"),
             hasParent(namespaceDecl(hasName(Namespace))),
-            isExpansionInMainFile())
+            isExpansionInMainFile(),
+            forEachDescendant(cxxMethodDecl(unless(isPrivate())).bind("toplevel-method")))
         ), this);
-
 }
 
 void CXXClassListener::run(MatchFinder::MatchResult const& Result) {
     if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("toplevel-name")) {
         if (RD->isClass())
             visitClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()), Result.SourceManager);
+    }
+    if (clang::CXXMethodDecl const* MD = Result.Nodes.getNodeAs<clang::CXXMethodDecl>("toplevel-method")) {
+        visitClassMethod(MD);
     }
 }
 
@@ -77,20 +80,21 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, 
 
         Imports.push_back(base_record);
     }
-
-    visitClassMethods(class_definition);
 }
 
-void CXXClassListener::visitClassMethods(clang::CXXRecordDecl const* class_definition)
+void CXXClassListener::visitClassMethod(clang::CXXMethodDecl const* method_declaration)
 {
-    for (clang::CXXMethodDecl const* method : class_definition->methods()) {
-        if (method->isInstance()) {
-            if (method->getAccess() == clang::AccessSpecifier::AS_private)
-                continue;
-            // TODO: Walk instance methods and find new types to add to imports
-        } else if (method->isStatic()) {
-            // TODO: Walk static methods and find new types to add to imports
+    if (method_declaration->isInstance()) {
+        if (llvm::isa<clang::CXXConstructorDecl>(method_declaration)
+            || llvm::isa<clang::CXXDestructorDecl>(method_declaration)
+            || llvm::isa<clang::CXXConversionDecl>(method_declaration)) {
+            return;
         }
+        // TODO: Walk instance methods and find new types to add to imports
+        Methods[method_declaration->getParent()].push_back(method_declaration);
+    } else if (method_declaration->isStatic()) {
+        // TODO: Walk static methods and find new types to add to imports
+        Methods[method_declaration->getParent()].push_back(method_declaration);
     }
 }
 

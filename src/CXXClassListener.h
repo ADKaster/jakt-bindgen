@@ -24,13 +24,14 @@ public:
 
     std::vector<clang::CXXRecordDecl const*> const& records() const { return Records; }
     std::vector<clang::CXXRecordDecl const*> const& imports() const { return Imports; }
+    std::vector<clang::CXXMethodDecl const*> const& methods_for(clang::CXXRecordDecl const* R) const { return Methods.at(R); }
 
     void resetForNextFile();
 
 private:
 
     void visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager);
-    void visitClassMethods(clang::CXXRecordDecl const* class_definition);
+    void visitClassMethod(clang::CXXMethodDecl const* method_declaration);
 
     void registerMatches();
 
@@ -38,6 +39,8 @@ private:
 
     std::vector<clang::CXXRecordDecl const*> Records;
     std::vector<clang::CXXRecordDecl const*> Imports;
+
+    std::unordered_map<clang::CXXRecordDecl const*, std::vector<clang::CXXMethodDecl const*>> Methods;
 
     clang::ast_matchers::MatchFinder& Finder;
 };
