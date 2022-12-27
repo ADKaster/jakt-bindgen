@@ -10,6 +10,7 @@
 #include "CXXClassListener.h"
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
+#include <clang/Basic/Specifiers.h>
 #include <llvm/Support/Debug.h>
 
 namespace jakt_bindgen {
@@ -102,18 +103,33 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
 
 void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definition)
 {
-    for (clang::CXXMethodDecl const* method : class_definition->methods()) {
-        if (method->isInstance()) {
-            if (method->getAccess() == clang::AccessSpecifier::AS_private)
-                continue;
-            std::string access = (method->getAccess() == clang::AS_public) ? std::string("public") : (method->getAccess() == clang::AS_protected) ? std::string("protected") : "unknown??";
-            LLVM_DEBUG(llvm::dbgs() << "\t" << access << " Instance method: " << method->getNameAsString() << "\n");
-        } else if (method->isStatic()) {
-            LLVM_DEBUG(llvm::dbgs() << "\tStatic method: " << method->getNameAsString() << "\n");
+    for (clang::CXXMethodDecl const* method : class_information.methods_for(class_definition)) {
+        bool const is_static = method->isStatic();
+        bool const is_virtual = method->isVirtual();
+        bool const is_protected = method->getAccess() == clang::AccessSpecifier::AS_protected;
+        assert(!(is_static && is_virtual));
+
+        Out << "    ";
+
+        if (!is_static) {
+            if (is_protected)
+                Out << "protected ";
+            else
+                Out << "public ";
+
+            if (is_virtual)
+                Out << "virtual ";
         }
-        else {
-            LLVM_DEBUG(llvm::dbgs() << "vas ist das? " << method->getNameAsString() << "\n");
-        }
+
+        Out << "function " << method->getName() << "(";
+
+        if (!is_static)
+            Out << "this, ";
+
+        // FIXME: Add parameters
+
+        // FIXME: Create a pretty printer for QualType that knows how to turn e.g. int --> c_int, * --> raw, etc.
+        Out << ") -> " << method->getReturnType().getAsString() << "\n";
     }
 }
 

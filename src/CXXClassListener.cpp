@@ -17,6 +17,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <vector>
 #include <filesystem>
+#include <ranges>
 
 namespace jakt_bindgen {
 
@@ -61,13 +62,13 @@ void CXXClassListener::resetForNextFile()
 
 void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager)
 {
+    if (std::ranges::find(Records, class_definition) != Records.end())
+        return;
+
     Records.push_back(class_definition);
 
     // Visit bases and add to import list
     for (clang::CXXBaseSpecifier const& base : class_definition->bases()) {
-        if (source_manager->isInMainFile(source_manager->getExpansionLoc(base.getBeginLoc())))
-            continue;
-
         if (base.isVirtual())
             llvm::report_fatal_error("ERROR: Virtual base class!\n", false);
         if (!(base.getAccessSpecifier() == clang::AccessSpecifier::AS_public))
@@ -77,6 +78,10 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, 
         clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
         if (!base_record)
             llvm::report_fatal_error("ERROR: Base class unusable", false);
+
+        if (source_manager->isInMainFile(source_manager->getExpansionLoc(base_record->getBeginLoc()))) {
+            continue;
+        }
 
         Imports.push_back(base_record);
     }
@@ -90,10 +95,10 @@ void CXXClassListener::visitClassMethod(clang::CXXMethodDecl const* method_decla
             || llvm::isa<clang::CXXConversionDecl>(method_declaration)) {
             return;
         }
-        // TODO: Walk instance methods and find new types to add to imports
+        // TODO: Walk instance method parameters and return type to find new types to add to imports
         Methods[method_declaration->getParent()].push_back(method_declaration);
     } else if (method_declaration->isStatic()) {
-        // TODO: Walk static methods and find new types to add to imports
+        // TODO: Walk static method parameters and return type to find new types to add to imports
         Methods[method_declaration->getParent()].push_back(method_declaration);
     }
 }
