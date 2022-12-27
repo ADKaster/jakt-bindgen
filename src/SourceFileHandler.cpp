@@ -6,9 +6,9 @@
 
 #include "SourceFileHandler.h"
 #include "JaktGenerator.h"
-#include <filesystem>
 #include <llvm/Support/raw_ostream.h>
 #include <algorithm>
+#include <filesystem>
 #include <system_error>
 
 namespace jakt_bindgen {

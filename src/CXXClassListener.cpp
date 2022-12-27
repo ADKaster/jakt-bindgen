@@ -36,16 +36,17 @@ CXXClassListener::~CXXClassListener()
 void CXXClassListener::registerMatches()
 {
     Finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
-        recordDecl(decl().bind("record"),
+        recordDecl(decl().bind("toplevel-name"),
             hasParent(namespaceDecl(hasName(Namespace))),
-            isExpansionInMainFile()))
-        .bind("names"), this);
+            isExpansionInMainFile())
+        ), this);
+
 }
 
 void CXXClassListener::run(MatchFinder::MatchResult const& Result) {
-    if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("names")) {
+    if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("toplevel-name")) {
         if (RD->isClass())
-            visitClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()));
+            visitClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()), Result.SourceManager);
     }
 }
 
@@ -55,12 +56,15 @@ void CXXClassListener::resetForNextFile()
     Imports.clear();
 }
 
-void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition)
+void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager)
 {
     Records.push_back(class_definition);
 
     // Visit bases and add to import list
-    for (auto const& base : class_definition->bases()) {
+    for (clang::CXXBaseSpecifier const& base : class_definition->bases()) {
+        if (source_manager->isInMainFile(source_manager->getExpansionLoc(base.getBeginLoc())))
+            continue;
+
         if (base.isVirtual())
             llvm::report_fatal_error("ERROR: Virtual base class!\n", false);
         if (!(base.getAccessSpecifier() == clang::AccessSpecifier::AS_public))
@@ -71,7 +75,6 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition)
         if (!base_record)
             llvm::report_fatal_error("ERROR: Base class unusable", false);
 
-        // FIXME: Only do this if base_record and class_defintion are not from the same header
         Imports.push_back(base_record);
     }
 

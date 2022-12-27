@@ -9,6 +9,7 @@
 #include <clang/AST/DeclCXX.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
+#include <clang/Basic/SourceManager.h>
 #include <memory>
 #include <vector>
 
@@ -28,7 +29,7 @@ public:
 
 private:
 
-    void visitClass(clang::CXXRecordDecl const* class_definition);
+    void visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager);
     void visitClassMethods(clang::CXXRecordDecl const* class_definition);
 
     void registerMatches();
