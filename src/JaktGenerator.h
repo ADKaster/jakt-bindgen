@@ -6,6 +6,10 @@
 
 #pragma once
 
+#include <clang/AST/Decl.h>
+#include <clang/AST/DeclCXX.h>
+#include <clang/AST/DeclTemplate.h>
+#include <clang/AST/Type.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -34,9 +38,14 @@ private:
     void printClass(clang::CXXRecordDecl const* class_definition);
     void printClassDeclaration(clang::CXXRecordDecl const* class_definition);
     void printClassMethods(clang::CXXRecordDecl const* class_definition);
+    void printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method);
+
+    void printParameter(clang::ParmVarDecl const* parameter, bool is_last_parameter);
+    void printQualType(clang::QualType const& type, bool is_return_type);
 
     llvm::raw_ostream& Out;
     CXXClassListener const& class_information;
+    clang::PrintingPolicy printing_policy;
 };
 
 }

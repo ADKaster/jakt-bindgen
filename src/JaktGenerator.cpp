@@ -8,8 +8,14 @@
 
 #include "JaktGenerator.h"
 #include "CXXClassListener.h"
+
+#include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/Type.h>
+#include <clang/Basic/LangOptions.h>
+#include <clang/AST/CXXInheritance.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
+#include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/Specifiers.h>
 #include <llvm/Support/Debug.h>
 
@@ -18,7 +24,10 @@ namespace jakt_bindgen {
 JaktGenerator::JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information)
     : Out(Out)
     , class_information(class_information)
+    , printing_policy(clang::LangOptions{})
 {
+    // FIXME: Get the language options from higher up in the stack. The SourceFileHandler can probably get one from the clang::CompilerInstance
+    printing_policy.adjustForCPlusPlus();
 }
 
 void JaktGenerator::generate(std::string const& header_path)
@@ -37,7 +46,7 @@ void JaktGenerator::printImportStatements()
 {
     for (auto const* klass : class_information.imports()) {
         Out << "import " <<  llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getQualifiedNameAsString();
-        Out << " { " << klass->getNameAsString() << " }\n";
+        Out << " { " << klass->getName() << " }\n";
     }
 }
 
@@ -66,7 +75,7 @@ void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
 
     printNamespaceBegin(llvm::cast<clang::NamespaceDecl>(class_definition->getEnclosingNamespaceContext()));
 
-    // class <name> : <base(s)>
+    // extern struct | class <name> : <base(s)>
     printClassDeclaration(class_definition);
     Out << " {\n";
     printClassMethods(class_definition);
@@ -75,9 +84,28 @@ void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
     printNamespaceEnd();
 }
 
+static bool hasBaseNamed(clang::CXXRecordDecl const* class_definition, std::string_view base_name)
+{
+    clang::CXXBasePaths Paths;
+    Paths.setOrigin(class_definition);
+
+    return class_definition->lookupInBases([&base_name](clang::CXXBaseSpecifier const* base, clang::CXXBasePath&) -> bool {
+        auto name = llvm::cast<clang::CXXRecordDecl>(base->getType()->getAs<clang::RecordType>()->getDecl()->getDefinition())->getQualifiedNameAsString();
+        return name == base_name;
+    }, Paths, true);
+}
+
+static bool isErrorOr(clang::QualType const&)
+{
+    // FIXME: How do we check if a type is a specialization of a specific named template?
+    return false;
+}
+
 void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_definition)
 {
-    Out << "class " << class_definition->getName() << " ";
+    bool is_class = hasBaseNamed(class_definition, "AK::RefCountedBase");
+
+    Out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName() << " ";
 
     bool first_base = true;
     for (auto const& base : class_definition->bases()) {
@@ -97,7 +125,7 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
         clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
         if (!base_record)
             llvm::report_fatal_error("ERROR: Base class unusable", false);
-        Out << base_record->getNameAsString();
+        Out << base_record->getName();
     }
 }
 
@@ -121,16 +149,68 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
                 Out << "virtual ";
         }
 
+        if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
+            printClassTemplateMethod(method, TD);
+            continue;
+        }
+
         Out << "function " << method->getName() << "(";
 
-        if (!is_static)
-            Out << "this, ";
+        if (!is_static) {
+            Out << "this";
+            if (method->getNumParams() > 0)
+                Out << ", ";
+        }
 
-        // FIXME: Add parameters
+        for (clang::ParmVarDecl const* param : method->parameters()) {
+            printParameter(param, param == *std::prev(method->param_end()));
+        }
 
-        // FIXME: Create a pretty printer for QualType that knows how to turn e.g. int --> c_int, * --> raw, etc.
-        Out << ") -> " << method->getReturnType().getAsString() << "\n";
+        Out << ") ";
+        if (isErrorOr(method->getReturnType()))
+            Out << "throws ";
+        Out << "-> ";
+        printQualType(method->getReturnType(), true);
+        Out << "\n";
     }
+
+    // FIXME: When variadic generics are added to jakt, don't hardcode these special cases.
+    // Derived from Core::Object? Add [[name="try_create"]] <name> create() throws overload for each constructor
+    if (hasBaseNamed(class_definition, "Core::Object")) {
+        assert(hasBaseNamed(class_definition, "AK::RefCountedBase"));
+        for (clang::CXXConstructorDecl const* ctor : class_definition->ctors())
+        {
+            Out << "    [[name=\"try_create\"]] function create(";
+            if (!ctor->isDefaultConstructor() && !ctor->isCopyOrMoveConstructor() && !ctor->isDeleted()) {
+                for (clang::ParmVarDecl const* param : ctor->parameters()) {
+                    printParameter(param, param == *std::prev(ctor->param_end()));
+                }
+            }
+            Out << ") throws -> " << class_definition->getName() << "\n";
+        }
+    }
+}
+
+void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method)
+{
+    Out << "// TODO: Template method " << method_declaration->getName() << "\n";
+    // FIXME: Actually print this bad boy out
+}
+
+void JaktGenerator::printParameter(clang::ParmVarDecl const* parameter, bool is_last_parameter)
+{
+    Out << parameter->getName() << ": ";
+    printQualType(parameter->getType(), false);
+    if (!is_last_parameter) {
+        Out << ", ";
+    }
+}
+
+void JaktGenerator::printQualType(clang::QualType const& type, bool is_return_type)
+{
+    // FIXME: Create a pretty printer for QualType that knows how to turn e.g. int --> c_int, * --> raw, etc.
+    // FIXME: Do extra conversions on return types (e.g. ErrorOr<T> --> T and function is now `throws`)
+    Out << type.getAsString(printing_policy);
 }
 
 }
