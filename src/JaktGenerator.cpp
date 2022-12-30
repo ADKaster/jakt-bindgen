@@ -162,8 +162,9 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
                 Out << ", ";
         }
 
-        for (clang::ParmVarDecl const* param : method->parameters()) {
-            printParameter(param, param == *std::prev(method->param_end()));
+        for (auto i = 0U; i < method->getNumParams(); ++i) {
+            clang::ParmVarDecl const* param = method->parameters()[i];
+            printParameter(param, i, i + 1 == method->getNumParams());
         }
 
         Out << ") ";
@@ -182,8 +183,9 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         {
             Out << "    [[name=\"try_create\"]] function create(";
             if (!ctor->isDefaultConstructor() && !ctor->isCopyOrMoveConstructor() && !ctor->isDeleted()) {
-                for (clang::ParmVarDecl const* param : ctor->parameters()) {
-                    printParameter(param, param == *std::prev(ctor->param_end()));
+                for (auto i = 0U; i < ctor->getNumParams(); ++i) {
+                    clang::ParmVarDecl const* param = ctor->parameters()[i];
+                    printParameter(param, i, i + 1 == ctor->getNumParams());
                 }
             }
             Out << ") throws -> " << class_definition->getName() << "\n";
@@ -197,9 +199,16 @@ void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_
     // FIXME: Actually print this bad boy out
 }
 
-void JaktGenerator::printParameter(clang::ParmVarDecl const* parameter, bool is_last_parameter)
+void JaktGenerator::printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter)
 {
-    Out << parameter->getName() << ": ";
+    auto param_name = parameter->getName();
+    if (!param_name.empty()) {
+        Out << param_name << ": ";
+    }
+    else {
+        // Use type name as parameter name
+        Out << "anon _param_" << std::to_string(parameter_index) << ": ";
+    }
     printQualType(parameter->getType(), false);
     if (!is_last_parameter) {
         Out << ", ";

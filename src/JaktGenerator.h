@@ -40,7 +40,7 @@ private:
     void printClassMethods(clang::CXXRecordDecl const* class_definition);
     void printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method);
 
-    void printParameter(clang::ParmVarDecl const* parameter, bool is_last_parameter);
+    void printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter);
     void printQualType(clang::QualType const& type, bool is_return_type);
 
     llvm::raw_ostream& Out;
