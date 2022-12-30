@@ -23,5 +23,5 @@ cmake --build build
 Run with
 
 ```
-./build/jakt-bindgen -p <path to compile_commands.json> <source files>
+./build/jakt-bindgen -p <path to compile_commands.json> -n <namespace> -b <base directory for includes> <header files>
 ```
