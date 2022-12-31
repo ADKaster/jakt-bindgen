@@ -32,7 +32,7 @@ bool SourceFileHandler::handleBeginSource(clang::CompilerInstance& CI)
         return false;
 
     current_filepath = std::filesystem::canonical(maybe_path.value().str()).lexically_relative(base_dir);
-    llvm::outs() << "Processing " << current_filepath << "\n";
+    llvm::outs() << "Processing " << current_filepath.string() << "\n";
 
     listener.resetForNextFile();
 
@@ -41,7 +41,7 @@ bool SourceFileHandler::handleBeginSource(clang::CompilerInstance& CI)
 
 void SourceFileHandler::handleEndSource()
 {
-    std::string new_filename = out_dir / current_filepath.filename().replace_extension(".jakt");
+    std::string new_filename = (out_dir / current_filepath.filename().replace_extension(".jakt")).string();
     std::transform(new_filename.begin(), new_filename.end(), new_filename.begin(),
         [](unsigned char c) { return std::tolower(c); });
 
@@ -54,7 +54,7 @@ void SourceFileHandler::handleEndSource()
 
     JaktGenerator generator(os, listener);
 
-    generator.generate(current_filepath);
+    generator.generate(current_filepath.string());
 }
 
 }
