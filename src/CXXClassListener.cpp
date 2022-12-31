@@ -15,9 +15,9 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <algorithm>
 #include <vector>
 #include <filesystem>
-#include <ranges>
 
 namespace jakt_bindgen {
 
@@ -62,7 +62,7 @@ void CXXClassListener::resetForNextFile()
 
 void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager)
 {
-    if (std::ranges::find(Records, class_definition) != Records.end())
+    if (std::find(Records.begin(), Records.end(), class_definition) != Records.end())
         return;
 
     Records.push_back(class_definition);
