@@ -1,0 +1,28 @@
+on:
+  pull_request:
+  push: # Run CI on the main branch after every merge. This is important to fill the GitHub Actions cache in a way that pull requests can see it
+    branches:
+      - main
+
+name: build-and-test
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - run: git config --global core.autocrlf false
+        if: ${{ matrix.os == 'windows-latest' }}
+
+      - uses: actions/checkout@v3
+
+      - name: Configure CMake
+        run: cmake -GNinja -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+
+      - name: Build project
+        run: cmake --build build
