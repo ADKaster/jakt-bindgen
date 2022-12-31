@@ -10,7 +10,7 @@
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
-#include <llvm-15/llvm/Support/CommandLine.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/CommandLine.h>
 
 #include <filesystem>
