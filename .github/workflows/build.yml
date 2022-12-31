@@ -4,25 +4,50 @@ on:
     branches:
       - main
 
-name: build-and-test
+name: build
 
 jobs:
   build:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [ubuntu-22.04]
+        cc: [clang-15]
+        cxx: [clang++-15]
+        prefix: [$(llvm-config-15 --prefix)]
+        include:
+         - os: macos-12
+           cc: $(brew --prefix llvm@15)/bin/clang
+           cxx: $(brew --prefix llvm@15)/bin/clang++
+           prefix: $(brew --prefix llvm@15)
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - run: git config --global core.autocrlf false
-        if: ${{ matrix.os == 'windows-latest' }}
-
       - uses: actions/checkout@v3
 
+      - name: Install Dependencies (Linux)
+        if: ${{ contains(matrix.os, 'ubuntu') }}
+        run: |
+          . /etc/lsb-release
+          sudo wget -O /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key
+          sudo echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/${DISTRIB_CODENAME}/ llvm-toolchain-${DISTRIB_CODENAME} main" | sudo tee -a /etc/apt/sources.list.d/llvm.list
+          sudo echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/${DISTRIB_CODENAME}/ llvm-toolchain-${DISTRIB_CODENAME}-15 main" | sudo tee -a /etc/apt/sources.list.d/llvm.list
+          echo "=========== Added apt source ========="
+          cat /etc/apt/sources.list.d/llvm.list
+          echo "======================================"
+          sudo apt update -y
+          sudo apt install -y ninja-build cmake clang-15 llvm-15 llvm-15-dev libc++-15-dev libc++abi-15-dev libclang-15-dev
+
+      - name: Install Dependencies (macOS)
+        if: ${{ contains(matrix.os, 'macos') }}
+        run: |
+          brew install ninja cmake llvm@15
+
       - name: Configure CMake
-        run: cmake -GNinja -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+        run: |
+          cmake -GNinja -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_PREFIX_PATH=${{ matrix.prefix }}
+        shell: bash
 
       - name: Build project
         run: cmake --build build
