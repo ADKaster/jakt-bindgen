@@ -49,3 +49,28 @@ if (ENABLE_ADDRESS_SANITIZER)
   target_compile_options(jakt-bindgen PUBLIC -fsanitize=address)
   target_link_options(jakt-bindgen PUBLIC -fsanitize=address)
 endif()
+
+target_compile_options(jakt-bindgen PRIVATE
+  -Wall
+  -Wextra
+  -Werror
+  -Wshadow
+  -Wcast-qual
+  -Wdeprecated-copy
+  -Wformat=2
+  -Wimplicit-fallthrough
+  -Wmisleading-indentation
+  -Wmissing-declarations
+  -Wnon-virtual-dtor
+  -Wsuggest-override
+  -Wundef
+  -Wunused
+  -Wwrite-strings
+)
+
+if (CMAKE_COMPILER_IS_GNUCXX)
+  target_compile_options(jakt-bindgen PRIVATE
+    -Wduplicated-cond
+    -Wlogical-op
+  )
+endif()

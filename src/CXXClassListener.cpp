@@ -5,6 +5,7 @@
  */
 
 #include "CXXClassListener.h"
+#include <algorithm>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/PrettyPrinter.h>
@@ -12,20 +13,19 @@
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Basic/Specifiers.h>
+#include <filesystem>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <algorithm>
 #include <vector>
-#include <filesystem>
 
 namespace jakt_bindgen {
 
 using namespace clang::ast_matchers;
 
-CXXClassListener::CXXClassListener(std::string Namespace, clang::ast_matchers::MatchFinder& Finder)
-    : Namespace(std::move(Namespace))
-    , Finder(Finder)
+CXXClassListener::CXXClassListener(std::string namespace_, clang::ast_matchers::MatchFinder& finder)
+    : m_namespace(std::move(namespace_))
+    , m_finder(finder)
 {
     registerMatches();
 }
@@ -36,15 +36,16 @@ CXXClassListener::~CXXClassListener()
 
 void CXXClassListener::registerMatches()
 {
-    Finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
-        recordDecl(decl().bind("toplevel-name"),
-            hasParent(namespaceDecl(hasName(Namespace))),
-            isExpansionInMainFile(),
-            forEachDescendant(cxxMethodDecl(unless(isPrivate())).bind("toplevel-method")))
-        ), this);
+    m_finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
+                            recordDecl(decl().bind("toplevel-name"),
+                                hasParent(namespaceDecl(hasName(m_namespace))),
+                                isExpansionInMainFile(),
+                                forEachDescendant(cxxMethodDecl(unless(isPrivate())).bind("toplevel-method")))),
+        this);
 }
 
-void CXXClassListener::run(MatchFinder::MatchResult const& Result) {
+void CXXClassListener::run(MatchFinder::MatchResult const& Result)
+{
     if (clang::RecordDecl const* RD = Result.Nodes.getNodeAs<clang::RecordDecl>("toplevel-name")) {
         if (RD->isClass())
             visitClass(llvm::cast<clang::CXXRecordDecl>(RD->getDefinition()), Result.SourceManager);
@@ -56,16 +57,16 @@ void CXXClassListener::run(MatchFinder::MatchResult const& Result) {
 
 void CXXClassListener::resetForNextFile()
 {
-    Records.clear();
-    Imports.clear();
+    m_records.clear();
+    m_imports.clear();
 }
 
 void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager)
 {
-    if (std::find(Records.begin(), Records.end(), class_definition) != Records.end())
+    if (std::find(m_records.begin(), m_records.end(), class_definition) != m_records.end())
         return;
 
-    Records.push_back(class_definition);
+    m_records.push_back(class_definition);
 
     // Visit bases and add to import list
     for (clang::CXXBaseSpecifier const& base : class_definition->bases()) {
@@ -83,7 +84,7 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, 
             continue;
         }
 
-        Imports.push_back(base_record);
+        m_imports.push_back(base_record);
     }
 }
 
@@ -96,10 +97,10 @@ void CXXClassListener::visitClassMethod(clang::CXXMethodDecl const* method_decla
             return;
         }
         // TODO: Walk instance method parameters and return type to find new types to add to imports
-        Methods[method_declaration->getParent()].push_back(method_declaration);
+        m_methods[method_declaration->getParent()].push_back(method_declaration);
     } else if (method_declaration->isStatic()) {
         // TODO: Walk static method parameters and return type to find new types to add to imports
-        Methods[method_declaration->getParent()].push_back(method_declaration);
+        m_methods[method_declaration->getParent()].push_back(method_declaration);
     }
 }
 

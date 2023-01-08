@@ -5,29 +5,29 @@
  */
 
 #define DEBUG_TYPE "jakt-gen"
+#include <llvm/Support/Debug.h>
 
-#include "JaktGenerator.h"
 #include "CXXClassListener.h"
+#include "JaktGenerator.h"
 
-#include <clang/AST/PrettyPrinter.h>
-#include <clang/AST/Type.h>
-#include <clang/Basic/LangOptions.h>
 #include <clang/AST/CXXInheritance.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
+#include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/Type.h>
+#include <clang/Basic/LangOptions.h>
 #include <clang/Basic/Specifiers.h>
-#include <llvm/Support/Debug.h>
 
 namespace jakt_bindgen {
 
-JaktGenerator::JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information)
-    : Out(Out)
-    , class_information(class_information)
-    , printing_policy(clang::LangOptions{})
+JaktGenerator::JaktGenerator(llvm::raw_ostream& out, CXXClassListener const& class_information)
+    : m_out(out)
+    , m_class_information(class_information)
+    , m_printing_policy(clang::LangOptions {})
 {
     // FIXME: Get the language options from higher up in the stack. The SourceFileHandler can probably get one from the clang::CompilerInstance
-    printing_policy.adjustForCPlusPlus();
+    m_printing_policy.adjustForCPlusPlus();
 }
 
 void JaktGenerator::generate(std::string const& header_path)
@@ -36,7 +36,7 @@ void JaktGenerator::generate(std::string const& header_path)
 
     printImportExternBegin(header_path);
 
-    for (clang::CXXRecordDecl const* klass : class_information.records())
+    for (clang::CXXRecordDecl const* klass : m_class_information.records())
         printClass(klass);
 
     printImportExternEnd();
@@ -44,30 +44,30 @@ void JaktGenerator::generate(std::string const& header_path)
 
 void JaktGenerator::printImportStatements()
 {
-    for (auto const* klass : class_information.imports()) {
-        Out << "import " <<  llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getQualifiedNameAsString();
-        Out << " { " << klass->getName() << " }\n";
+    for (auto const* klass : m_class_information.imports()) {
+        m_out << "import " << llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getQualifiedNameAsString();
+        m_out << " { " << klass->getName() << " }\n";
     }
 }
 
 void JaktGenerator::printImportExternBegin(std::string const& header)
 {
-    Out << "import extern \"" << header << "\" {\n";
+    m_out << "import extern \"" << header << "\" {\n";
 }
 
 void JaktGenerator::printImportExternEnd()
 {
-    Out << "} // import\n";
+    m_out << "} // import\n";
 }
 
-void JaktGenerator::printNamespaceBegin(clang::NamespaceDecl const* NS)
+void JaktGenerator::printNamespaceBegin(clang::NamespaceDecl const* ns)
 {
-    Out << "namespace " << NS->getQualifiedNameAsString() << " {\n";
+    m_out << "namespace " << ns->getQualifiedNameAsString() << " {\n";
 }
 
 void JaktGenerator::printNamespaceEnd()
 {
-    Out << "} // namespace\n";
+    m_out << "} // namespace\n";
 }
 
 void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
@@ -77,9 +77,9 @@ void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
 
     // extern struct | class <name> : <base(s)>
     printClassDeclaration(class_definition);
-    Out << " {\n";
+    m_out << " {\n";
     printClassMethods(class_definition);
-    Out << "}\n";
+    m_out << "}\n";
 
     printNamespaceEnd();
 }
@@ -92,7 +92,8 @@ static bool hasBaseNamed(clang::CXXRecordDecl const* class_definition, std::stri
     return class_definition->lookupInBases([&base_name](clang::CXXBaseSpecifier const* base, clang::CXXBasePath&) -> bool {
         auto name = llvm::cast<clang::CXXRecordDecl>(base->getType()->getAs<clang::RecordType>()->getDecl()->getDefinition())->getQualifiedNameAsString();
         return name == base_name;
-    }, Paths, true);
+    },
+        Paths, true);
 }
 
 static bool isErrorOr(clang::QualType const&)
@@ -105,7 +106,7 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
 {
     bool is_class = hasBaseNamed(class_definition, "AK::RefCountedBase");
 
-    Out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName() << " ";
+    m_out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName() << " ";
 
     bool first_base = true;
     for (auto const& base : class_definition->bases()) {
@@ -115,38 +116,38 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
             llvm::report_fatal_error("ERROR: Don't know how to handle non-public bases\n", false);
 
         if (first_base) {
-            Out << ": ";
+            m_out << ": ";
             first_base = false;
         } else {
-            Out << ", ";
+            m_out << ", ";
         }
 
         clang::RecordType const* Ty = base.getType()->getAs<clang::RecordType>();
         clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
         if (!base_record)
             llvm::report_fatal_error("ERROR: Base class unusable", false);
-        Out << base_record->getName();
+        m_out << base_record->getName();
     }
 }
 
 void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definition)
 {
-    for (clang::CXXMethodDecl const* method : class_information.methods_for(class_definition)) {
+    for (clang::CXXMethodDecl const* method : m_class_information.methods_for(class_definition)) {
         bool const is_static = method->isStatic();
         bool const is_virtual = method->isVirtual();
         bool const is_protected = method->getAccess() == clang::AccessSpecifier::AS_protected;
         assert(!(is_static && is_virtual));
 
-        Out << "    ";
+        m_out << "    ";
 
         if (!is_static) {
             if (is_protected)
-                Out << "protected ";
+                m_out << "protected ";
             else
-                Out << "public ";
+                m_out << "public ";
 
             if (is_virtual)
-                Out << "virtual ";
+                m_out << "virtual ";
         }
 
         if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
@@ -154,12 +155,12 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
             continue;
         }
 
-        Out << "function " << method->getName() << "(";
+        m_out << "function " << method->getName() << "(";
 
         if (!is_static) {
-            Out << "this";
+            m_out << "this";
             if (method->getNumParams() > 0)
-                Out << ", ";
+                m_out << ", ";
         }
 
         for (auto i = 0U; i < method->getNumParams(); ++i) {
@@ -167,35 +168,34 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
             printParameter(param, i, i + 1 == method->getNumParams());
         }
 
-        Out << ") ";
+        m_out << ") ";
         if (isErrorOr(method->getReturnType()))
-            Out << "throws ";
-        Out << "-> ";
+            m_out << "throws ";
+        m_out << "-> ";
         printQualType(method->getReturnType(), true);
-        Out << "\n";
+        m_out << "\n";
     }
 
     // FIXME: When variadic generics are added to jakt, don't hardcode these special cases.
     // Derived from Core::Object? Add [[name="try_create"]] <name> create() throws overload for each constructor
     if (hasBaseNamed(class_definition, "Core::Object")) {
         assert(hasBaseNamed(class_definition, "AK::RefCountedBase"));
-        for (clang::CXXConstructorDecl const* ctor : class_definition->ctors())
-        {
-            Out << "    [[name=\"try_create\"]] function create(";
+        for (clang::CXXConstructorDecl const* ctor : class_definition->ctors()) {
+            m_out << "    [[name=\"try_create\"]] function create(";
             if (!ctor->isDefaultConstructor() && !ctor->isCopyOrMoveConstructor() && !ctor->isDeleted()) {
                 for (auto i = 0U; i < ctor->getNumParams(); ++i) {
                     clang::ParmVarDecl const* param = ctor->parameters()[i];
                     printParameter(param, i, i + 1 == ctor->getNumParams());
                 }
             }
-            Out << ") throws -> " << class_definition->getName() << "\n";
+            m_out << ") throws -> " << class_definition->getName() << "\n";
         }
     }
 }
 
-void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method)
+void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const*)
 {
-    Out << "// TODO: Template method " << method_declaration->getName() << "\n";
+    m_out << "// TODO: Template method " << method_declaration->getName() << "\n";
     // FIXME: Actually print this bad boy out
 }
 
@@ -203,23 +203,22 @@ void JaktGenerator::printParameter(clang::ParmVarDecl const* parameter, unsigned
 {
     auto param_name = parameter->getName();
     if (!param_name.empty()) {
-        Out << param_name << ": ";
-    }
-    else {
+        m_out << param_name << ": ";
+    } else {
         // Use type name as parameter name
-        Out << "anon _param_" << std::to_string(parameter_index) << ": ";
+        m_out << "anon _param_" << std::to_string(parameter_index) << ": ";
     }
     printQualType(parameter->getType(), false);
     if (!is_last_parameter) {
-        Out << ", ";
+        m_out << ", ";
     }
 }
 
-void JaktGenerator::printQualType(clang::QualType const& type, bool is_return_type)
+void JaktGenerator::printQualType(clang::QualType const& type, bool)
 {
     // FIXME: Create a pretty printer for QualType that knows how to turn e.g. int --> c_int, * --> raw, etc.
     // FIXME: Do extra conversions on return types (e.g. ErrorOr<T> --> T and function is now `throws`)
-    Out << type.getAsString(printing_policy);
+    m_out << type.getAsString(m_printing_policy);
 }
 
 }

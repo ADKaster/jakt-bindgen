@@ -18,21 +18,19 @@ namespace jakt_bindgen {
 
 class CXXClassListener;
 
-class JaktGenerator : public clang::tooling::SourceFileCallbacks
-{
+class JaktGenerator : public clang::tooling::SourceFileCallbacks {
 public:
-    JaktGenerator(llvm::raw_ostream& Out, CXXClassListener const& class_information);
+    JaktGenerator(llvm::raw_ostream& out, CXXClassListener const& class_information);
 
     void generate(std::string const& header_path);
 
 private:
-
     void printImportStatements();
 
     void printImportExternBegin(std::string const& header);
     void printImportExternEnd();
 
-    void printNamespaceBegin(clang::NamespaceDecl const* NS);
+    void printNamespaceBegin(clang::NamespaceDecl const* ns);
     void printNamespaceEnd();
 
     void printClass(clang::CXXRecordDecl const* class_definition);
@@ -43,9 +41,9 @@ private:
     void printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter);
     void printQualType(clang::QualType const& type, bool is_return_type);
 
-    llvm::raw_ostream& Out;
-    CXXClassListener const& class_information;
-    clang::PrintingPolicy printing_policy;
+    llvm::raw_ostream& m_out;
+    CXXClassListener const& m_class_information;
+    clang::PrintingPolicy m_printing_policy;
 };
 
 }
