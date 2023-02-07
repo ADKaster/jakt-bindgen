@@ -30,6 +30,7 @@ private:
 
     clang::ast_matchers::MatchFinder m_finder;
     CXXClassListener m_listener;
+    clang::CompilerInstance* m_ci { nullptr };
 };
 
 }

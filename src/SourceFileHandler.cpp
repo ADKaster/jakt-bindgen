@@ -35,24 +35,33 @@ bool SourceFileHandler::handleBeginSource(clang::CompilerInstance& CI)
 
     m_listener.resetForNextFile();
 
+    m_ci = &CI;
+
     return true;
 }
 
 void SourceFileHandler::handleEndSource()
 {
-    std::string new_filename = (m_out_dir / m_current_filepath.filename().replace_extension(".jakt")).string();
-    std::transform(new_filename.begin(), new_filename.end(), new_filename.begin(),
+    std::string base_name = m_current_filepath.filename().replace_extension(".jakt");
+    std::transform(base_name.begin(), base_name.end(), base_name.begin(),
         [](unsigned char c) { return std::tolower(c); });
+
+    std::string new_filename = (m_out_dir / base_name).string();
 
     std::error_code os_errc = {};
     llvm::raw_fd_ostream os(new_filename, os_errc, llvm::sys::fs::CD_CreateAlways);
     if (os_errc) {
-        llvm::errs() << "Can't open file " << new_filename;
+        llvm::errs() << "Can't open file " << new_filename << ": " << os_errc.message() << "\n";
     }
 
     JaktGenerator generator(os, m_listener);
 
-    generator.generate(m_current_filepath.string());
+    static_cast<clang::tooling::SourceFileCallbacks&>(generator).handleBeginSource(*m_ci);
+    try {
+        generator.generate(m_current_filepath.string());
+    } catch (std::exception) {
+    }
+    static_cast<clang::tooling::SourceFileCallbacks&>(generator).handleEndSource();
 }
 
 }

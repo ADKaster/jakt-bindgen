@@ -25,6 +25,7 @@ public:
     std::vector<clang::CXXRecordDecl const*> const& records() const { return m_records; }
     std::vector<clang::CXXRecordDecl const*> const& imports() const { return m_imports; }
     std::vector<clang::CXXMethodDecl const*> const& methods_for(clang::CXXRecordDecl const* r) const { return m_methods.at(r); }
+    bool contains_methods_for(clang::CXXRecordDecl const* r) const { return m_methods.contains(r); }
 
     void resetForNextFile();
 

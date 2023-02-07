@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "EnumBits.h"
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
@@ -13,6 +14,7 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
 #include <llvm/Support/raw_ostream.h>
+#include <optional>
 
 namespace jakt_bindgen {
 
@@ -23,6 +25,12 @@ public:
     JaktGenerator(llvm::raw_ostream& out, CXXClassListener const& class_information);
 
     void generate(std::string const& header_path);
+
+    enum class QualTypePrintFlags {
+        PF_Nothing = 0,
+        PF_IsReturnType = 1,
+        PF_InFunctionThatMayThrow = 2,
+    };
 
 private:
     void printImportStatements();
@@ -39,11 +47,33 @@ private:
     void printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method);
 
     void printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter);
-    void printQualType(clang::QualType const& type, bool is_return_type);
+    std::string rewriteParameter(llvm::StringRef name, unsigned index, clang::QualType const& type);
+
+    std::string rewriteQualTypeToJaktType(clang::QualType const& type, QualTypePrintFlags flags);
+
+    void printQualType(clang::QualType const& type, QualTypePrintFlags flags)
+    {
+        m_out << rewriteQualTypeToJaktType(type, flags);
+    }
+
+    virtual bool handleBeginSource(clang::CompilerInstance& CI) override
+    {
+        if (!CI.hasASTContext())
+            CI.createASTContext();
+
+        m_context = &CI.getASTContext();
+        return true;
+    }
+
+    bool isErrorOr(clang::QualType const&) const;
+    std::optional<clang::QualType> getTemplateParameterIfMatches(clang::QualType const&, llvm::StringRef template_name, unsigned index = 0) const;
 
     llvm::raw_ostream& m_out;
     CXXClassListener const& m_class_information;
     clang::PrintingPolicy m_printing_policy;
+    clang::ASTContext const* m_context { nullptr };
 };
+
+ENUM_BITWISE_OPERATORS(JaktGenerator::QualTypePrintFlags)
 
 }
