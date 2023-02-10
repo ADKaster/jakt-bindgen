@@ -10,12 +10,14 @@
 #include "CXXClassListener.h"
 #include "JaktGenerator.h"
 
+#include <clang/AST/ASTContext.h>
 #include <clang/AST/CXXInheritance.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/PrettyPrinter.h>
 #include <clang/AST/Type.h>
+#include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/Specifiers.h>
 
@@ -39,8 +41,11 @@ void JaktGenerator::generate(std::string const& header_path)
 
     printImportExternBegin(header_path);
 
-    for (clang::CXXRecordDecl const* klass : m_class_information.records())
-        printClass(klass);
+    for (clang::TagDecl const* tag_decl : m_class_information.tag_decls()) {
+        printNamespaceBegin(llvm::cast<clang::NamespaceDecl>(tag_decl->getEnclosingNamespaceContext()));
+        printTagDecl(tag_decl);
+        printNamespaceEnd();
+    }
 
     printImportExternEnd();
 }
@@ -73,18 +78,40 @@ void JaktGenerator::printNamespaceEnd()
     m_out << "} // namespace\n";
 }
 
+void JaktGenerator::printTagDecl(clang::TagDecl const* tag_declaration)
+{
+    if (auto const* klass = llvm::dyn_cast<clang::CXXRecordDecl>(tag_declaration)) {
+        printClass(klass);
+    } else {
+        assert(llvm::isa<clang::EnumDecl>(tag_declaration));
+        printEnumeration(llvm::cast<clang::EnumDecl>(tag_declaration));
+    }
+}
+
 void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
 {
-
-    printNamespaceBegin(llvm::cast<clang::NamespaceDecl>(class_definition->getEnclosingNamespaceContext()));
+    using namespace clang::ast_matchers;
 
     // extern struct | class <name> : <base(s)>
     printClassDeclaration(class_definition);
     m_out << " {\n";
     printClassMethods(class_definition);
-    m_out << "}\n";
 
-    printNamespaceEnd();
+    // FIXME: Is there a way we can keep all the matching in the class listener?
+    auto nested_decls_matcher = traverse(clang::TK_IgnoreUnlessSpelledInSource,
+        tagDecl(decl().bind("nested-tag-decl"),
+            isExpansionInMainFile(),
+            hasParent(cxxRecordDecl(hasName(class_definition->getName())))));
+    auto nested_decls = match(nested_decls_matcher, *const_cast<clang::ASTContext*>(m_context));
+    for (auto const& node : nested_decls) {
+        if (auto const* tag_decl = node.getNodeAs<clang::TagDecl>("nested-tag-decl")) {
+            printTagDecl(tag_decl);
+        } else {
+            assert(false && "Malformed matcher!");
+        }
+    }
+
+    m_out << "}\n";
 }
 
 static bool hasBaseNamed(clang::CXXRecordDecl const* class_definition, std::string_view base_name)
@@ -189,7 +216,7 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
             return;
         }
 
-        m_out << "function " << method->getDeclName() << "(";
+        m_out << "fn " << method->getDeclName() << "(";
 
         if (!is_static) {
             m_out << "this";
@@ -221,7 +248,7 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
     if (hasBaseNamed(class_definition, "Core::Object")) {
         assert(hasBaseNamed(class_definition, "AK::RefCountedBase"));
         for (clang::CXXConstructorDecl const* ctor : class_definition->ctors()) {
-            m_out << "    [[name=\"try_create\"]] function create(";
+            m_out << "    [[name=\"try_create\"]] fn create(";
             if (!ctor->isDefaultConstructor() && !ctor->isCopyOrMoveConstructor() && !ctor->isDeleted()) {
                 for (auto i = 0U; i < ctor->getNumParams(); ++i) {
                     clang::ParmVarDecl const* param = ctor->parameters()[i];
@@ -237,6 +264,20 @@ void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_
 {
     m_out << "// TODO: Template method " << method_declaration->getName() << "\n";
     // FIXME: Actually print this bad boy out
+}
+
+void JaktGenerator::printEnumeration(clang::EnumDecl const* enum_definition)
+{
+    m_out << "enum " << enum_definition->getName();
+    if (enum_definition->isFixed()) {
+        m_out << " : " << rewriteQualTypeToJaktType(enum_definition->getIntegerType(), QualTypePrintFlags::PF_Nothing);
+    }
+    m_out << " {\n";
+    for (auto* constant_decl : enum_definition->enumerators()) {
+        m_out << "    " << constant_decl->getName();
+        m_out << " = " << llvm::toString(constant_decl->getInitVal(), 10) << "\n";
+    }
+    m_out << "}\n";
 }
 
 void JaktGenerator::printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter)
@@ -297,7 +338,7 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
     }
 
     if (auto inner_type = getTemplateParameterIfMatches(type, "AK::Function"); inner_type.has_value()) {
-        std::string jakt_type = "function(";
+        std::string jakt_type = "fn(";
         auto const* function_type = inner_type.value()->getAs<clang::FunctionProtoType>();
         if (!function_type)
             llvm::report_fatal_error("Function type is not a function as it ought to be", false);

@@ -42,6 +42,14 @@ void CXXClassListener::registerMatches()
                                 isExpansionInMainFile(),
                                 forEachDescendant(cxxMethodDecl(unless(isPrivate())).bind("toplevel-method")))),
         this);
+
+    // Note: Matches *namespace scope* enums.
+    //       Nested class enums are handled separately.
+    m_finder.addMatcher(traverse(clang::TK_IgnoreUnlessSpelledInSource,
+                            enumDecl(decl().bind("toplevel-enum"),
+                                hasParent(namespaceDecl(hasName(m_namespace))),
+                                isExpansionInMainFile())),
+        this);
 }
 
 void CXXClassListener::run(MatchFinder::MatchResult const& Result)
@@ -53,20 +61,23 @@ void CXXClassListener::run(MatchFinder::MatchResult const& Result)
     if (clang::CXXMethodDecl const* MD = Result.Nodes.getNodeAs<clang::CXXMethodDecl>("toplevel-method")) {
         visitClassMethod(MD);
     }
+    if (clang::EnumDecl const* ED = Result.Nodes.getNodeAs<clang::EnumDecl>("toplevel-enum")) {
+        visitEnumeration(ED);
+    }
 }
 
 void CXXClassListener::resetForNextFile()
 {
-    m_records.clear();
+    m_tag_decls.clear();
     m_imports.clear();
 }
 
 void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager)
 {
-    if (std::find(m_records.begin(), m_records.end(), class_definition) != m_records.end())
+    if (std::find(m_tag_decls.begin(), m_tag_decls.end(), class_definition) != m_tag_decls.end())
         return;
 
-    m_records.push_back(class_definition);
+    m_tag_decls.push_back(class_definition);
 
     // Visit bases and add to import list
     for (clang::CXXBaseSpecifier const& base : class_definition->bases()) {
@@ -102,6 +113,14 @@ void CXXClassListener::visitClassMethod(clang::CXXMethodDecl const* method_decla
         // TODO: Walk static method parameters and return type to find new types to add to imports
         m_methods[method_declaration->getParent()].push_back(method_declaration);
     }
+}
+
+void CXXClassListener::visitEnumeration(clang::EnumDecl const* enum_declaration)
+{
+    if (std::find(m_tag_decls.begin(), m_tag_decls.end(), enum_declaration) != m_tag_decls.end())
+        return;
+
+    m_tag_decls.push_back(enum_declaration);
 }
 
 }

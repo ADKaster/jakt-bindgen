@@ -41,10 +41,14 @@ private:
     void printNamespaceBegin(clang::NamespaceDecl const* ns);
     void printNamespaceEnd();
 
+    void printTagDecl(clang::TagDecl const* tag_declaration);
+
     void printClass(clang::CXXRecordDecl const* class_definition);
     void printClassDeclaration(clang::CXXRecordDecl const* class_definition);
     void printClassMethods(clang::CXXRecordDecl const* class_definition);
     void printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const* template_method);
+
+    void printEnumeration(clang::EnumDecl const* enum_definition);
 
     void printParameter(clang::ParmVarDecl const* parameter, unsigned int parameter_index, bool is_last_parameter);
     std::string rewriteParameter(llvm::StringRef name, unsigned index, clang::QualType const& type);

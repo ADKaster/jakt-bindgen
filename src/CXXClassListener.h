@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/ASTMatchers/ASTMatchers.h>
@@ -22,8 +23,8 @@ public:
 
     virtual void run(clang::ast_matchers::MatchFinder::MatchResult const& result) override;
 
-    std::vector<clang::CXXRecordDecl const*> const& records() const { return m_records; }
-    std::vector<clang::CXXRecordDecl const*> const& imports() const { return m_imports; }
+    std::vector<clang::TagDecl const*> const& tag_decls() const { return m_tag_decls; }
+    std::vector<clang::TagDecl const*> const& imports() const { return m_imports; }
     std::vector<clang::CXXMethodDecl const*> const& methods_for(clang::CXXRecordDecl const* r) const { return m_methods.at(r); }
     bool contains_methods_for(clang::CXXRecordDecl const* r) const { return m_methods.contains(r); }
 
@@ -32,13 +33,14 @@ public:
 private:
     void visitClass(clang::CXXRecordDecl const* class_definition, clang::SourceManager const* source_manager);
     void visitClassMethod(clang::CXXMethodDecl const* method_declaration);
+    void visitEnumeration(clang::EnumDecl const* enum_declaration);
 
     void registerMatches();
 
     std::string m_namespace;
 
-    std::vector<clang::CXXRecordDecl const*> m_records;
-    std::vector<clang::CXXRecordDecl const*> m_imports;
+    std::vector<clang::TagDecl const*> m_tag_decls;
+    std::vector<clang::TagDecl const*> m_imports;
 
     std::unordered_map<clang::CXXRecordDecl const*, std::vector<clang::CXXMethodDecl const*>> m_methods;
 

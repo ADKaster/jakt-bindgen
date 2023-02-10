@@ -57,10 +57,7 @@ void SourceFileHandler::handleEndSource()
     JaktGenerator generator(os, m_listener);
 
     static_cast<clang::tooling::SourceFileCallbacks&>(generator).handleBeginSource(*m_ci);
-    try {
-        generator.generate(m_current_filepath.string());
-    } catch (std::exception) {
-    }
+    generator.generate(m_current_filepath.string());
     static_cast<clang::tooling::SourceFileCallbacks&>(generator).handleEndSource();
 }
 
