@@ -91,6 +91,14 @@ void JaktGenerator::printTagDecl(clang::TagDecl const* tag_declaration)
 void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
 {
     using namespace clang::ast_matchers;
+    if (!class_definition->isCompleteDefinition()) {
+        // Skip incomplete types, i.e. forward declared in the header.
+        return;
+    }
+    if (class_definition->isUnion()) {
+        // Can't represent unions
+        return;
+    }
 
     // extern struct | class <name> : <base(s)>
     printClassDeclaration(class_definition);
@@ -265,7 +273,7 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
 
 void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_declaration, clang::FunctionTemplateDecl const*)
 {
-    m_out << "// TODO: Template method " << method_declaration->getName() << "\n";
+    m_out << "// TODO: Template method " << method_declaration->getQualifiedNameAsString() << "\n";
     // FIXME: Actually print this bad boy out
 }
 
@@ -410,6 +418,8 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         case clang::BuiltinType::Char32:
             return "i32";
         case clang::BuiltinType::UShort:
+            return "u16";
+        case clang::BuiltinType::Short:
             return "i16";
         case clang::BuiltinType::UInt:
         case clang::BuiltinType::ULong:

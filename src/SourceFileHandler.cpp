@@ -52,6 +52,12 @@ void SourceFileHandler::handleEndSource()
     llvm::raw_fd_ostream os(new_filename, os_errc, llvm::sys::fs::CD_CreateAlways);
     if (os_errc) {
         llvm::errs() << "Can't open file " << new_filename << ": " << os_errc.message() << "\n";
+        return;
+    }
+
+    if (m_listener.tag_decls().empty()) {
+        llvm::errs() << "No classes found?\n";
+        return;
     }
 
     JaktGenerator generator(os, m_listener);
