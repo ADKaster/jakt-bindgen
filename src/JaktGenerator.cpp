@@ -103,22 +103,26 @@ void JaktGenerator::printClass(clang::CXXRecordDecl const* class_definition)
     // extern struct | class <name> : <base(s)>
     printClassDeclaration(class_definition);
     m_out << " {\n";
-    printClassMethods(class_definition);
+    {
+        IndentationIncreaser indent(m_indentation_level);
+        printClassMethods(class_definition);
 
-    // FIXME: Is there a way we can keep all the matching in the class listener?
-    auto nested_decls_matcher = traverse(clang::TK_IgnoreUnlessSpelledInSource,
-        tagDecl(decl().bind("nested-tag-decl"),
-            isExpansionInMainFile(),
-            hasParent(cxxRecordDecl(hasName(class_definition->getName())))));
-    auto nested_decls = match(nested_decls_matcher, *const_cast<clang::ASTContext*>(m_context));
-    for (auto const& node : nested_decls) {
-        if (auto const* tag_decl = node.getNodeAs<clang::TagDecl>("nested-tag-decl")) {
-            printTagDecl(tag_decl);
-        } else {
-            assert(false && "Malformed matcher!");
+        // FIXME: Is there a way we can keep all the matching in the class listener?
+        auto nested_decls_matcher = traverse(clang::TK_IgnoreUnlessSpelledInSource,
+            tagDecl(decl().bind("nested-tag-decl"),
+                isExpansionInMainFile(),
+                hasParent(cxxRecordDecl(hasName(class_definition->getName())))));
+        auto nested_decls = match(nested_decls_matcher, *const_cast<clang::ASTContext*>(m_context));
+        for (auto const& node : nested_decls) {
+            if (auto const* tag_decl = node.getNodeAs<clang::TagDecl>("nested-tag-decl")) {
+                printTagDecl(tag_decl);
+            } else {
+                assert(false && "Malformed matcher!");
+            }
         }
     }
 
+    printIndentation();
     m_out << "}\n";
 }
 
@@ -161,6 +165,7 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
 {
     bool is_class = hasBaseNamed(class_definition, "AK::RefCountedBase");
 
+    printIndentation();
     m_out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName() << " ";
 
     bool first_base = true;
@@ -201,7 +206,12 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         if (method->getAccess() == clang::AccessSpecifier::AS_private)
             return;
 
-        m_out << "    ";
+        printIndentation();
+
+        if (method->getReturnType()->isReferenceType()) {
+            m_out << "// TODO: Method " << method->getName() << " returns a reference\n";
+            return;
+        }
 
         if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
             printClassTemplateMethod(method, TD);
@@ -279,15 +289,21 @@ void JaktGenerator::printClassTemplateMethod(clang::CXXMethodDecl const* method_
 
 void JaktGenerator::printEnumeration(clang::EnumDecl const* enum_definition)
 {
+    printIndentation();
     m_out << "enum " << enum_definition->getName();
     if (enum_definition->isFixed()) {
         m_out << " : " << rewriteQualTypeToJaktType(enum_definition->getIntegerType(), QualTypePrintFlags::PF_Nothing);
     }
     m_out << " {\n";
-    for (auto* constant_decl : enum_definition->enumerators()) {
-        m_out << "    " << constant_decl->getName();
-        m_out << " = " << llvm::toString(constant_decl->getInitVal(), 10) << "\n";
+    {
+        IndentationIncreaser indent(m_indentation_level);
+        for (auto* constant_decl : enum_definition->enumerators()) {
+            printIndentation();
+            m_out << constant_decl->getName();
+            m_out << " = " << llvm::toString(constant_decl->getInitVal(), 10) << "\n";
+        }
     }
+    printIndentation();
     m_out << "}\n";
 }
 
@@ -381,12 +397,8 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
     auto is_mutable = !type.isConstQualified();
 
     if (auto const* reference_type = type->getAs<clang::ReferenceType>()) {
-        std::string prefix = has_flag(flags, QualTypePrintFlags::PF_IsReturnType)
-            ? ""
-            : is_mutable
-            ? "&mut "
-            : "& ";
-
+        assert(!has_flag(flags, QualTypePrintFlags::PF_IsReturnType));
+        std::string prefix = is_mutable ? "&mut " : "& ";
         return prefix + rewriteQualTypeToJaktType(reference_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
     }
 
@@ -433,7 +445,6 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         case clang::BuiltinType::Float:
             return "f32";
         case clang::BuiltinType::Double:
-            return "f64";
         case clang::BuiltinType::LongDouble:
             return "f64";
         case clang::BuiltinType::NullPtr:

@@ -69,12 +69,28 @@ private:
         return true;
     }
 
+    void printIndentation()
+    {
+        for (auto i = 0U; i < m_indentation_level; ++i)
+            m_out << "    ";
+    }
+
+    class IndentationIncreaser
+    {
+    public:
+        IndentationIncreaser(uint32_t& i) : m_i(i) { ++m_i; }
+        ~IndentationIncreaser() { --m_i; }
+    private:
+        uint32_t& m_i;
+    };
+
     bool isErrorOr(clang::QualType const&) const;
     std::optional<clang::QualType> getTemplateParameterIfMatches(clang::QualType const&, llvm::StringRef template_name, unsigned index = 0) const;
 
     llvm::raw_ostream& m_out;
     CXXClassListener const& m_class_information;
     clang::PrintingPolicy m_printing_policy;
+    uint32_t m_indentation_level { 0 };
     clang::ASTContext const* m_context { nullptr };
 };
 
