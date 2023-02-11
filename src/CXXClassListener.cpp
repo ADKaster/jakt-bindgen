@@ -102,10 +102,15 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, 
 void CXXClassListener::visitClassMethod(clang::CXXMethodDecl const* method_declaration)
 {
     if (method_declaration->isInstance()) {
-        if (llvm::isa<clang::CXXConstructorDecl>(method_declaration)
-            || llvm::isa<clang::CXXDestructorDecl>(method_declaration)
-            || llvm::isa<clang::CXXConversionDecl>(method_declaration)) {
+        if (llvm::isa<clang::CXXDestructorDecl>(method_declaration)
+            || llvm::isa<clang::CXXConversionDecl>(method_declaration)
+            || method_declaration->isOverloadedOperator()) {
             return;
+        }
+        if (clang::CXXConstructorDecl const* ctor = llvm::dyn_cast<clang::CXXConstructorDecl>(method_declaration)) {
+            // Allow public default constructors to pass through, along with ctors with parameters
+            if (ctor->isCopyOrMoveConstructor() || ctor->isDeleted())
+                return;
         }
         // TODO: Walk instance method parameters and return type to find new types to add to imports
         m_methods[method_declaration->getParent()].push_back(method_declaration);

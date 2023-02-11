@@ -41,11 +41,11 @@ void JaktGenerator::generate(std::string const& header_path)
 
     printImportExternBegin(header_path);
 
+    printNamespaceBegin(llvm::cast<clang::NamespaceDecl>(m_class_information.tag_decls()[0]->getEnclosingNamespaceContext()));
     for (clang::TagDecl const* tag_decl : m_class_information.tag_decls()) {
-        printNamespaceBegin(llvm::cast<clang::NamespaceDecl>(tag_decl->getEnclosingNamespaceContext()));
         printTagDecl(tag_decl);
-        printNamespaceEnd();
     }
+    printNamespaceEnd();
 
     printImportExternEnd();
 }
@@ -183,14 +183,11 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         if (m_class_information.contains_methods_for(class_definition)) {
             for (auto const& method : m_class_information.methods_for(class_definition))
                 f(method);
-        } else {
-            for (auto const& method : class_definition->methods())
-                f(method);
         }
     };
 
     for_each_method([&](clang::CXXMethodDecl const* method) {
-        if (method->isOverloadedOperator() || llvm::isa<clang::CXXDestructorDecl>(method))
+        if (method->getAccess() == clang::AccessSpecifier::AS_private)
             return;
 
         bool const is_constructor = llvm::isa<clang::CXXConstructorDecl>(method);
@@ -201,7 +198,7 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
 
         m_out << "    ";
 
-        if (!is_static) {
+        if (!is_static || is_constructor) {
             if (is_protected)
                 m_out << "protected ";
             else
@@ -219,6 +216,9 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         m_out << "fn " << method->getDeclName() << "(";
 
         if (!is_static) {
+            if (!method->isConst()) {
+                m_out << "mut ";
+            }
             m_out << "this";
             if (method->getNumParams() > 0)
                 m_out << ", ";
@@ -379,8 +379,10 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         return prefix + rewriteQualTypeToJaktType(reference_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
     }
 
-    if (auto const* pointer_type = type->getAs<clang::PointerType>())
-        return std::string("raw ") + rewriteQualTypeToJaktType(pointer_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
+    if (auto const* pointer_type = type->getAs<clang::PointerType>()) {
+        std::string prefix = pointer_type->getPointeeType().isConstQualified() ? "raw " : "mut raw ";
+        return prefix + rewriteQualTypeToJaktType(pointer_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
+    }
 
     if (auto const* builtin_type = type->getAs<clang::BuiltinType>()) {
         switch (builtin_type->getKind()) {
