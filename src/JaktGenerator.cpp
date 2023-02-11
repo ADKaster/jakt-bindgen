@@ -161,6 +161,14 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
             llvm::report_fatal_error("ERROR: Don't know how to handle virtual bases", false);
         if (base.getAccessSpecifier() != clang::AccessSpecifier::AS_public)
             llvm::report_fatal_error("ERROR: Don't know how to handle non-public bases", false);
+        clang::RecordType const* Ty = base.getType()->getAs<clang::RecordType>();
+        clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
+        if (!base_record)
+            llvm::report_fatal_error("ERROR: Base class unusable", false);
+
+        auto base_class_name = base_record->getQualifiedNameAsString();
+        if (base_class_name == "AK::RefCounted" || base_class_name == "AK::Weakable")
+            continue;
 
         if (first_base) {
             m_out << ": ";
@@ -168,11 +176,6 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
         } else {
             m_out << ", ";
         }
-
-        clang::RecordType const* Ty = base.getType()->getAs<clang::RecordType>();
-        clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
-        if (!base_record)
-            llvm::report_fatal_error("ERROR: Base class unusable", false);
         m_out << base_record->getName();
     }
 }
@@ -190,13 +193,18 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         if (method->getAccess() == clang::AccessSpecifier::AS_private)
             return;
 
+        m_out << "    ";
+
+        if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
+            printClassTemplateMethod(method, TD);
+            return;
+        }
+
         bool const is_constructor = llvm::isa<clang::CXXConstructorDecl>(method);
         bool const is_static = method->isStatic() || is_constructor;
         bool const is_virtual = method->isVirtual();
         bool const is_protected = method->getAccess() == clang::AccessSpecifier::AS_protected;
         assert(!(is_static && is_virtual));
-
-        m_out << "    ";
 
         if (!is_static || is_constructor) {
             if (is_protected)
@@ -206,11 +214,6 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
 
             if (is_virtual)
                 m_out << "virtual ";
-        }
-
-        if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
-            printClassTemplateMethod(method, TD);
-            return;
         }
 
         m_out << "fn " << method->getDeclName() << "(";

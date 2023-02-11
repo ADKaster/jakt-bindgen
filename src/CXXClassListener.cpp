@@ -94,6 +94,9 @@ void CXXClassListener::visitClass(clang::CXXRecordDecl const* class_definition, 
         if (source_manager->isInMainFile(source_manager->getExpansionLoc(base_record->getBeginLoc()))) {
             continue;
         }
+        auto base_class_name = base_record->getQualifiedNameAsString();
+        if (base_class_name == "AK::RefCounted" || base_class_name == "AK::Weakable")
+            continue;
 
         m_imports.push_back(base_record);
     }
