@@ -21,6 +21,7 @@
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/Specifiers.h>
 
+#include <filesystem>
 #include <string>
 #include <string_view>
 
@@ -52,9 +53,11 @@ void JaktGenerator::generate(std::string const& header_path)
 
 void JaktGenerator::printImportStatements()
 {
-    for (auto const* klass : m_class_information.imports()) {
-        m_out << "import " << llvm::cast<clang::NamespaceDecl>(klass->getEnclosingNamespaceContext())->getQualifiedNameAsString();
-        m_out << " { " << klass->getName() << " }\n";
+    for (auto const& [klass, file_path] : m_class_information.imports()) {
+        auto jakt_module_name = std::filesystem::path(file_path).filename().replace_extension().string();
+        std::transform(jakt_module_name.begin(), jakt_module_name.end(), jakt_module_name.begin(), tolower);
+
+        m_out << "import " << jakt_module_name << " { " << klass->getName() << " }\n";
     }
 }
 
@@ -161,20 +164,88 @@ std::optional<clang::QualType> JaktGenerator::getTemplateParameterIfMatches(clan
     return {};
 }
 
+std::optional<JaktGenerator::Template> JaktGenerator::getTemplate(clang::QualType const& type) const
+{
+    assert(m_context != nullptr);
+    auto desugared_type = type.getDesugaredType(*m_context);
+    if (llvm::isa<clang::InjectedClassNameType>(desugared_type))
+        return getTemplate(static_cast<clang::InjectedClassNameType const*>(desugared_type.getTypePtr())->getInjectedSpecializationType());
+
+    if (llvm::isa<clang::TemplateSpecializationType>(desugared_type)) {
+        auto t = llvm::cast<clang::TemplateSpecializationType>(desugared_type);
+        Template value {
+            .name = t->getTemplateName().getAsTemplateDecl()->getQualifiedNameAsString(),
+            .parameters = {},
+        };
+        for (auto& arg : t->template_arguments()) {
+            if (arg.getKind() != clang::TemplateArgument::ArgKind::Type) {
+                llvm::errs() << "Unsupported template argument kind: " << arg.getKind() << "\n";
+                return {};
+            }
+            value.parameters.push_back(arg.getAsType());
+        }
+        return value;
+    }
+
+    if (auto const* record_type = llvm::dyn_cast<clang::RecordType>(desugared_type)) {
+        auto name = record_type->getAsRecordDecl()->getQualifiedNameAsString();
+        if (auto const* t = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record_type->getAsRecordDecl()); t) {
+            Template value {
+                .name = name,
+                .parameters = {},
+            };
+            for (auto& arg : t->getTemplateArgs().asArray()) {
+                if (arg.getKind() != clang::TemplateArgument::ArgKind::Type) {
+                    llvm::errs() << "Unsupported template argument kind: " << arg.getKind() << "\n";
+                    return {};
+                }
+                value.parameters.push_back(arg.getAsType());
+            }
+
+            return value;
+        }
+    }
+
+    return {};
+}
+
 void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_definition)
 {
     bool is_class = hasBaseNamed(class_definition, "AK::RefCountedBase");
 
     printIndentation();
-    m_out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName() << " ";
+    m_out << "extern " << (is_class ? "class " : "struct ") << class_definition->getName();
+    if (class_definition->isTemplated()) {
+        if (auto params = class_definition->getDescribedTemplateParams()) {
+            bool first = true;
+            for (auto& param : params->asArray()) {
+                if (first)
+                    m_out << "<";
+                else
+                    m_out << ", ";
+                m_out << param->getNameAsString();
+                first = false;
+            }
+
+            if (!first)
+                m_out << ">";
+        }
+    }
 
     bool first_base = true;
     for (auto const& base : class_definition->bases()) {
-        if (base.isVirtual())
-            llvm::report_fatal_error("ERROR: Don't know how to handle virtual bases", false);
-        if (base.getAccessSpecifier() != clang::AccessSpecifier::AS_public)
-            llvm::report_fatal_error("ERROR: Don't know how to handle non-public bases", false);
+        if (base.isVirtual()) {
+            llvm::errs() << "ERROR: Don't know how to handle virtual bases\n";
+            continue;
+        }
+        if (base.getAccessSpecifier() != clang::AccessSpecifier::AS_public) {
+            llvm::errs() << "ERROR: Don't know how to handle non-public bases\n";
+            continue;
+        }
         clang::RecordType const* Ty = base.getType()->getAs<clang::RecordType>();
+        if (!Ty)
+            continue;
+
         clang::CXXRecordDecl const* base_record = llvm::cast_or_null<clang::CXXRecordDecl>(Ty->getDecl()->getDefinition());
         if (!base_record)
             llvm::report_fatal_error("ERROR: Base class unusable", false);
@@ -184,7 +255,7 @@ void JaktGenerator::printClassDeclaration(clang::CXXRecordDecl const* class_defi
             continue;
 
         if (first_base) {
-            m_out << ": ";
+            m_out << " : ";
             first_base = false;
         } else {
             m_out << ", ";
@@ -206,6 +277,13 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
         if (method->getAccess() == clang::AccessSpecifier::AS_private)
             return;
 
+        if (!method->getType()->isFunctionType()) {
+            // wtf?
+            llvm::errs() << "ERROR: Method " << method->getDeclName().getAsString() << " is not a function type\n";
+            method->getType().dump();
+            return;
+        }
+
         printIndentation();
 
         if (method->getReturnType()->isReferenceType()) {
@@ -215,6 +293,11 @@ void JaktGenerator::printClassMethods(clang::CXXRecordDecl const* class_definiti
 
         if (clang::FunctionTemplateDecl const* TD = method->getDescribedFunctionTemplate()) {
             printClassTemplateMethod(method, TD);
+            return;
+        }
+
+        if (method->getReturnType()->isReferenceType()) {
+            m_out << "// TODO: Method " << method->getName() << " returns a reference\n";
             return;
         }
 
@@ -378,7 +461,7 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
             else
                 jakt_type += ", ";
 
-            jakt_type += rewriteParameter("", index, param_type);
+            jakt_type += rewriteParameter("", index++, param_type);
         }
 
         jakt_type += ")";
@@ -394,16 +477,33 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         return jakt_type;
     }
 
+    if (auto maybe_template_ = getTemplate(type)) {
+        auto template_ = maybe_template_.value();
+        std::string type_name = template_.name + "<";
+        auto first = true;
+        for (auto& arg : template_.parameters) {
+            if (first)
+                first = false;
+            else
+                type_name += ", ";
+
+            type_name += rewriteQualTypeToJaktType(arg, flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
+        }
+        type_name += ">";
+        return type_name;
+    }
+
     auto is_mutable = !type.isConstQualified();
 
     if (auto const* reference_type = type->getAs<clang::ReferenceType>()) {
-        assert(!has_flag(flags, QualTypePrintFlags::PF_IsReturnType));
+        // assert(!has_flag(flags, QualTypePrintFlags::PF_IsReturnType));
         std::string prefix = is_mutable ? "&mut " : "& ";
         return prefix + rewriteQualTypeToJaktType(reference_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
     }
 
     if (auto const* pointer_type = type->getAs<clang::PointerType>()) {
-        std::string prefix = pointer_type->getPointeeType().isConstQualified() ? "raw " : "mut raw ";
+        // std::string prefix = pointer_type->getPointeeType().isConstQualified() ? "raw " : "mut raw ";
+        std::string prefix = "raw ";
         return prefix + rewriteQualTypeToJaktType(pointer_type->getPointeeType(), flags & ~QualTypePrintFlags::PF_InFunctionThatMayThrow);
     }
 
@@ -450,10 +550,11 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         case clang::BuiltinType::NullPtr:
             return "raw void"; // hehehe
         default: {
-            std::string error_string = "Don't know how to convert ";
-            error_string += base_type.getAsString();
-            error_string += " to a jakt type";
-            llvm::report_fatal_error(error_string.c_str(), false);
+            // std::string error_string = "Don't know how to convert ";
+            // error_string += base_type.getAsString();
+            // error_string += " to a jakt type";
+            // llvm::report_fatal_error(error_string.c_str(), false);
+            return base_type.getAsString();
         }
         }
     }
@@ -492,10 +593,16 @@ std::string JaktGenerator::rewriteQualTypeToJaktType(clang::QualType const& base
         return type.withoutLocalFastQualifiers().getAsString(m_printing_policy);
     }
 
+    if (type->isTemplateTypeParmType()) {
+        return type.withoutLocalFastQualifiers().getAsString(m_printing_policy);
+    }
+
     std::string error_string = "Don't know how to convert ";
     error_string += base_type.getAsString();
     error_string += " to a jakt type";
-    llvm::report_fatal_error(error_string.c_str(), false);
+    type->dump();
+    llvm::errs() << error_string << "\n";
+    return "void";
 }
 
 }

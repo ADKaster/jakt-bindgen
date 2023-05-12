@@ -87,6 +87,12 @@ private:
     bool isErrorOr(clang::QualType const&) const;
     std::optional<clang::QualType> getTemplateParameterIfMatches(clang::QualType const&, llvm::StringRef template_name, unsigned index = 0) const;
 
+    struct Template {
+        std::string name;
+        std::vector<clang::QualType> parameters;
+    };
+    std::optional<Template> getTemplate(clang::QualType const& type) const;
+
     llvm::raw_ostream& m_out;
     CXXClassListener const& m_class_information;
     clang::PrintingPolicy m_printing_policy;
