@@ -13,10 +13,10 @@
 
 namespace jakt_bindgen {
 
-SourceFileHandler::SourceFileHandler(std::string namespace_, std::filesystem::path out_dir, std::filesystem::path base_dir)
+SourceFileHandler::SourceFileHandler(std::vector<std::string> namespaces, std::filesystem::path out_dir, std::vector<std::filesystem::path> base_dirs, std::vector<std::string>& source_paths)
     : m_out_dir(std::move(out_dir))
-    , m_base_dir(std::move(base_dir))
-    , m_listener(std::move(namespace_), m_finder)
+    , m_base_dirs(std::move(base_dirs))
+    , m_listener(std::move(namespaces), m_finder, source_paths, m_seen_files)
 {
 }
 
@@ -30,7 +30,16 @@ bool SourceFileHandler::handleBeginSource(clang::CompilerInstance& CI)
     if (!maybe_path.has_value())
         return false;
 
-    m_current_filepath = std::filesystem::canonical(maybe_path.value().str()).lexically_relative(m_base_dir);
+    auto path = std::filesystem::canonical(maybe_path.value().str());
+    auto specific_base_directory_it = std::find_if(m_base_dirs.begin(), m_base_dirs.end(), [&](auto const& item) -> bool {
+        return std::mismatch(item.begin(), item.end(), path.begin(), path.end()).first == item.end();
+    });
+    if (specific_base_directory_it == m_base_dirs.end()) {
+        llvm::errs() << "File " << path.string() << " is not in any of the specified base directories\n";
+        return false;
+    }
+
+    m_current_filepath = path.lexically_relative(*specific_base_directory_it);
     llvm::outs() << "Processing " << m_current_filepath.string() << "\n";
 
     m_listener.resetForNextFile();

@@ -26,13 +26,13 @@ static llvm::cl::extrahelp s_common_help(clang::tooling::CommonOptionsParser::He
 // A help message for this specific tool can be added afterwards.
 static llvm::cl::extrahelp s_more_help("\nMore help text...\n");
 
-static llvm::cl::opt<std::string> s_target_namespace("n", llvm::cl::desc("Specify namespace to import names from"),
+static llvm::cl::list<std::string> s_target_namespaces("n", llvm::cl::desc("Specify namespaces to import names from"),
     llvm::cl::value_desc("namespace"),
-    llvm::cl::Required);
+    llvm::cl::OneOrMore);
 
-static llvm::cl::opt<std::string> s_base_path("b", llvm::cl::desc("Specify base path to use to determine import paths"),
+static llvm::cl::list<std::string> s_base_paths("b", llvm::cl::desc("Specify base paths to use to determine import paths"),
     llvm::cl::value_desc("base"),
-    llvm::cl::Required);
+    llvm::cl::OneOrMore);
 
 int main(int argc, char const** argv)
 {
@@ -45,11 +45,24 @@ int main(int argc, char const** argv)
         return 1;
     }
     auto& options_parser = expected_parser.get();
-    clang::tooling::ClangTool tool(options_parser.getCompilations(), options_parser.getSourcePathList());
 
-    jakt_bindgen::SourceFileHandler handler(s_target_namespace, destination_path, std::filesystem::canonical(s_base_path.c_str()));
+    std::vector<std::string> extra_source_paths;
+    std::vector<std::filesystem::path> base_paths;
+    for (auto& base_path : s_base_paths)
+        base_paths.push_back(std::filesystem::canonical(base_path));
+    jakt_bindgen::SourceFileHandler handler(s_target_namespaces, destination_path, std::move(base_paths), extra_source_paths);
 
     auto action = clang::tooling::newFrontendActionFactory(&handler.finder(), &handler);
 
-    return tool.run(action.get());
+    int ret = 0;
+    do {
+        auto const source_paths = extra_source_paths.empty() ? options_parser.getSourcePathList() : extra_source_paths;
+        extra_source_paths.clear();
+
+        clang::tooling::ClangTool tool(options_parser.getCompilations(), source_paths);
+        if (auto rv = tool.run(action.get()); rv != 0)
+            ret = rv;
+    } while (!extra_source_paths.empty());
+
+    return ret;
 }
